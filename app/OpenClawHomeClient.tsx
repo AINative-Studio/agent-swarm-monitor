@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useAgentList } from '@/hooks/useOpenClawAgents';
+import { useSwarmHealth, useTimeline } from '@/hooks/useMonitoring';
 import { MOCK_TEMPLATES } from '@/lib/openclaw-mock-data';
 import {
   fadeUp,
@@ -98,16 +99,22 @@ function AgentRow({ agent, index }: AgentRowProps) {
 export default function OpenClawHomeClient() {
   const router = useRouter();
   const { data, isLoading } = useAgentList();
+  const { data: health } = useSwarmHealth();
+  const { data: timeline } = useTimeline({ limit: 1, offset: 0 });
 
   const agents = data?.agents ?? [];
   const runningCount = agents.filter((a) => a.status === 'running').length;
   const homeTemplates = useMemo(() => MOCK_TEMPLATES.slice(0, 4), []);
 
+  const healthLabel = health?.status
+      ? health.status.charAt(0).toUpperCase() + health.status.slice(1)
+      : '--';
+
   const stats = [
     { label: 'Total Agents', value: agents.length },
     { label: 'Running', value: runningCount },
-    { label: 'Requests Today', value: 0 },
-    { label: 'Spend Today', value: '$0.00' },
+    { label: 'Swarm Health', value: healthLabel },
+    { label: 'Active Events', value: timeline?.totalCount ?? 0 },
   ];
 
   return (

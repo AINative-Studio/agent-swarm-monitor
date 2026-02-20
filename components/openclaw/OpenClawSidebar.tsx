@@ -9,6 +9,7 @@ import {
   Globe,
   Phone,
   Clock,
+  Activity,
   Users,
   Settings,
   MessageSquare,
@@ -30,6 +31,7 @@ const navItems: NavItem[] = [
   { name: 'Integrations', href: '/integrations', icon: Globe },
   { name: 'Channels', href: '/channels', icon: Phone },
   { name: 'Audit Log', href: '/audit-log', icon: Clock },
+  { name: 'Monitoring', href: '/monitoring', icon: Activity },
   { name: 'Team', href: '/team', icon: Users },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
