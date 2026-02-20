@@ -1,9 +1,14 @@
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
-import { AppLayout } from './components/AppLayout';
+import QueryProvider from '@/components/providers/query-provider';
+import OpenClawLayoutShell from './OpenClawLayoutShell';
 
-export const metadata = {
-  title: 'AgentClaw - AI Agent Swarm Monitor',
-  description: 'Monitor and manage AI agent swarms with real-time insights and controls',
+const inter = Inter({ subsets: ['latin'] });
+
+export const metadata: Metadata = {
+  title: 'AgentClaw',
+  description: 'AI Agent Management Platform by AINative Studio',
 };
 
 export default function RootLayout({
@@ -13,8 +18,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
-        <AppLayout>{children}</AppLayout>
+      <body className={inter.className}>
+        <QueryProvider>
+          <OpenClawLayoutShell>{children}</OpenClawLayoutShell>
+        </QueryProvider>
       </body>
     </html>
   );
