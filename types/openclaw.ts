@@ -66,6 +66,38 @@ export interface OpenClawTemplate {
   defaultPersona: string;
   defaultHeartbeatInterval: HeartbeatInterval;
   defaultChecklist: string[];
+  userId?: string;
+  createdAt?: string;
+  updatedAt?: string | null;
+}
+
+export interface TemplateListResponse {
+  templates: OpenClawTemplate[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CreateTemplateRequest {
+  name: string;
+  description?: string;
+  category: TemplateCategory;
+  icons?: string[];
+  defaultModel?: string;
+  defaultPersona?: string;
+  defaultHeartbeatInterval?: HeartbeatInterval;
+  defaultChecklist?: string[];
+}
+
+export interface UpdateTemplateRequest {
+  name?: string;
+  description?: string;
+  category?: TemplateCategory;
+  icons?: string[];
+  defaultModel?: string;
+  defaultPersona?: string;
+  defaultHeartbeatInterval?: HeartbeatInterval;
+  defaultChecklist?: string[];
 }
 
 export interface Integration {
@@ -97,4 +129,50 @@ export interface ApiKeyProvider {
   id: string;
   name: string;
   configured: boolean;
+}
+
+export type SwarmStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'failed';
+export type CoordinationStrategy = 'parallel' | 'sequential' | 'hierarchical';
+
+export interface AgentSwarm {
+  id: string;
+  name: string;
+  description: string | null;
+  strategy: CoordinationStrategy;
+  goal: string | null;
+  status: SwarmStatus;
+  agentIds: string[];
+  agentCount: number;
+  userId: string;
+  configuration: Record<string, unknown> | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+  startedAt: string | null;
+  pausedAt: string | null;
+  stoppedAt: string | null;
+}
+
+export interface AgentSwarmListResponse {
+  swarms: AgentSwarm[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CreateSwarmRequest {
+  name: string;
+  description?: string;
+  strategy: CoordinationStrategy;
+  goal?: string;
+  agentIds?: string[];
+  configuration?: Record<string, unknown>;
+}
+
+export interface UpdateSwarmRequest {
+  name?: string;
+  description?: string;
+  strategy?: CoordinationStrategy;
+  goal?: string;
+  configuration?: Record<string, unknown>;
 }
