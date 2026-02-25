@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Plus, ExternalLink, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,10 +16,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import type { OpenClawAgent, UpdateAgentSettingsRequest, HeartbeatInterval } from '@/types/openclaw';
-import { MOCK_INTEGRATIONS, MOCK_API_KEY_PROVIDERS } from '@/lib/openclaw-mock-data';
+import type { OpenClawAgent, UpdateAgentSettingsRequest, HeartbeatInterval, Integration } from '@/types/openclaw';
+import type { AgentConfiguration } from '@/types/agent-configuration';
+import { MOCK_API_KEY_PROVIDERS } from '@/lib/openclaw-mock-data';
 import { MODEL_OPTIONS_RAW as MODEL_OPTIONS, HEARTBEAT_OPTIONS } from '@/lib/openclaw-utils';
 import IntegrationRow from './IntegrationRow';
+import GmailIntegrationModal from './GmailIntegrationModal';
+import LinkedInIntegrationModal from './LinkedInIntegrationModal';
+import DisconnectIntegrationDialog from './DisconnectIntegrationDialog';
+import openClawService from '@/lib/openclaw-service';
+import { useToast } from '@/hooks/use-toast';
 
 interface AgentSettingsTabProps {
   agent: OpenClawAgent;
@@ -235,16 +241,54 @@ export default function AgentSettingsTab({
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Control</h3>
           <p className="text-sm text-gray-500 mt-0.5">
-            Access your agent&apos;s built-in management dashboard.
+            Access the OpenClaw Gateway dashboard to monitor all active sessions.
           </p>
         </div>
         <Button
           variant="outline"
           className="border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
+          disabled={
+            !agent.openclawSessionKey ||
+            !['running', 'paused'].includes(agent.status?.toLowerCase() || '')
+          }
+          onClick={() => {
+            const gatewayUrl = process.env.NEXT_PUBLIC_OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
+
+            // Convert ws:// to http:// if needed
+            const httpUrl = gatewayUrl
+              .replace('ws://', 'http://')
+              .replace('wss://', 'https://');
+
+            // Check if URL is configured
+            if (!httpUrl || httpUrl === '') {
+              alert('OpenClaw Gateway URL not configured');
+              return;
+            }
+
+            // Open gateway root URL in new tab
+            window.open(httpUrl, '_blank', 'noopener,noreferrer');
+          }}
+          title={
+            !agent.openclawSessionKey
+              ? 'Agent must be provisioned first'
+              : !['running', 'paused'].includes(agent.status?.toLowerCase() || '')
+              ? 'Agent must be running or paused'
+              : 'Open OpenClaw Control UI in new window'
+          }
         >
           <ExternalLink className="h-4 w-4 mr-2" />
           Open Control UI
         </Button>
+        {!agent.openclawSessionKey && (
+          <p className="text-xs text-gray-400 italic">
+            Control UI will be available once the agent is provisioned.
+          </p>
+        )}
+        {agent.openclawSessionKey && !['running', 'paused'].includes(agent.status?.toLowerCase() || '') && (
+          <p className="text-xs text-gray-400 italic">
+            Control UI is only accessible when the agent is running or paused.
+          </p>
+        )}
       </div>
 
       <Separator className="bg-gray-100" />
