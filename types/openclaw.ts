@@ -1,3 +1,5 @@
+import { AgentConfiguration } from './agent-configuration';
+
 export type AgentStatus = 'provisioning' | 'running' | 'paused' | 'stopped' | 'failed';
 export type HeartbeatInterval = '5m' | '15m' | '30m' | '1h' | '2h';
 export type TemplateCategory = 'engineering' | 'sales-outreach' | 'devops-infrastructure' | 'productivity';
@@ -16,7 +18,7 @@ export interface OpenClawAgent {
   heartbeatChecklist: string[] | null;
   lastHeartbeatAt: string | null;
   nextHeartbeatAt: string | null;
-  configuration: Record<string, unknown> | null;
+  configuration: AgentConfiguration | null;
   errorMessage: string | null;
   errorCount: number;
   createdAt: string;
@@ -42,7 +44,7 @@ export interface CreateAgentRequest {
     interval?: HeartbeatInterval;
     checklist?: string[];
   };
-  configuration?: Record<string, unknown>;
+  configuration?: AgentConfiguration;
 }
 
 export interface UpdateAgentSettingsRequest {
@@ -53,7 +55,7 @@ export interface UpdateAgentSettingsRequest {
     interval?: HeartbeatInterval;
     checklist?: string[];
   };
-  configuration?: Record<string, unknown>;
+  configuration?: AgentConfiguration;
 }
 
 export interface OpenClawTemplate {
