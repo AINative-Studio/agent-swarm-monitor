@@ -29,7 +29,6 @@ import { cn } from '@/lib/utils';
 import type { OpenClawAgent, UpdateAgentSettingsRequest, HeartbeatInterval, Integration } from '@/types/openclaw';
 import type { AgentConfiguration } from '@/types/agent-configuration';
 import { API_KEY_PROVIDERS } from '@/types/agent-configuration';
-import { MOCK_INTEGRATIONS } from '@/lib/openclaw-mock-data';
 import { MODEL_OPTIONS_RAW as MODEL_OPTIONS, HEARTBEAT_OPTIONS } from '@/lib/openclaw-utils';
 import { maskApiKey } from '@/lib/api-key-utils';
 import IntegrationRow from './IntegrationRow';
@@ -411,7 +410,7 @@ export default function AgentSettingsTab({
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-gray-900">API Keys</h3>
         <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-          {MOCK_API_KEY_PROVIDERS.map((provider) => (
+          {API_KEY_PROVIDERS.map((provider) => (
             <div
               key={provider.id}
               className="flex items-center justify-between py-2 border-b border-gray-100"
