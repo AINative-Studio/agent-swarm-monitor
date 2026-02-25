@@ -27,8 +27,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import type { OpenClawAgent, UpdateAgentSettingsRequest, HeartbeatInterval, Integration } from '@/types/openclaw';
-import type { AgentConfiguration } from '@/types/agent-configuration';
-import { API_KEY_PROVIDERS } from '@/types/agent-configuration';
+import type { AgentConfiguration, ActiveHours } from '@/types/agent-configuration';
+import { API_KEY_PROVIDERS, DEFAULT_ACTIVE_HOURS } from '@/types/agent-configuration';
 import { MODEL_OPTIONS_RAW as MODEL_OPTIONS, HEARTBEAT_OPTIONS } from '@/lib/openclaw-utils';
 import { maskApiKey } from '@/lib/api-key-utils';
 import IntegrationRow from './IntegrationRow';
@@ -36,6 +36,21 @@ import GmailIntegrationModal from './GmailIntegrationModal';
 import LinkedInIntegrationModal from './LinkedInIntegrationModal';
 import DisconnectIntegrationDialog from './DisconnectIntegrationDialog';
 import ApiKeyModal from './ApiKeyModal';
+import ActiveHoursModal from './ActiveHoursModal';
+
+// Type for API key provider IDs - matches the keys in AgentConfiguration.apiKeys
+type ApiKeyProviderId =
+  | 'anthropic'
+  | 'googleAi'
+  | 'mistral'
+  | 'veniceAi'
+  | 'minimax'
+  | 'openai'
+  | 'openrouter'
+  | 'groq'
+  | 'moonshotAi'
+  | 'twoAi'
+  | 'cerebras';
 import openClawService from '@/lib/openclaw-service';
 import { useToast } from '@/hooks/use-toast';
 
@@ -65,7 +80,14 @@ export default function AgentSettingsTab({
   const [heartbeatInterval, setHeartbeatInterval] = useState<HeartbeatInterval>(
     agent.heartbeatInterval ?? '5m'
   );
-  const [activeHours, setActiveHours] = useState(false);
+
+  // Active Hours state - Initialize from agent configuration
+  const [activeHoursConfig, setActiveHoursConfig] = useState<ActiveHours>(() => {
+    const config = (agent.configuration as any)?.activeHours;
+    return config || DEFAULT_ACTIVE_HOURS;
+  });
+  const [showActiveHoursModal, setShowActiveHoursModal] = useState(false);
+
   const [heartbeatChecklist, setHeartbeatChecklist] = useState(
     agent.heartbeatChecklist?.join('\n') ?? ''
   );
@@ -77,6 +99,10 @@ export default function AgentSettingsTab({
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
   const [disconnectTarget, setDisconnectTarget] = useState<'gmail' | 'linkedin' | null>(null);
   const [isSavingIntegration, setIsSavingIntegration] = useState(false);
+
+  // API Key modal states
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<ApiKeyProviderId | null>(null);
 
   const handleSave = useCallback(() => {
     onSave({
@@ -265,6 +291,158 @@ export default function AgentSettingsTab({
     }
   }, [agent.id, agentConfig, disconnectTarget, onAgentUpdate, toast]);
 
+  // Handle API key save
+  const handleSaveApiKey = useCallback(async (providerId: string, apiKey: string) => {
+    const updatedConfig: AgentConfiguration = {
+      ...agentConfig,
+      apiKeys: {
+        ...agentConfig.apiKeys,
+        [providerId]: {
+          key: apiKey,
+          masked: maskApiKey(apiKey),
+          addedAt: new Date().toISOString(),
+        },
+      },
+    };
+
+    await openClawService.updateSettings(agent.id, {
+      configuration: updatedConfig,
+    });
+
+    toast({
+      title: 'API Key Added',
+      description: `${API_KEY_PROVIDERS.find(p => p.id === providerId)?.name} API key has been added`,
+    });
+
+    // Refresh agent data
+    if (onAgentUpdate) {
+      await onAgentUpdate();
+    }
+  }, [agent.id, agentConfig, onAgentUpdate, toast]);
+
+  // Handle API key remove
+  const handleRemoveApiKey = useCallback(async (providerId: ApiKeyProviderId) => {
+    const updatedKeys = { ...agentConfig.apiKeys };
+    delete updatedKeys[providerId];
+
+    const updatedConfig: AgentConfiguration = {
+      ...agentConfig,
+      apiKeys: updatedKeys,
+    };
+
+    await openClawService.updateSettings(agent.id, {
+      configuration: updatedConfig,
+    });
+
+    toast({
+      title: 'API Key Removed',
+      description: `${API_KEY_PROVIDERS.find(p => p.id === providerId)?.name} API key has been removed`,
+    });
+
+    // Refresh agent data
+    if (onAgentUpdate) {
+      await onAgentUpdate();
+    }
+  }, [agent.id, agentConfig, onAgentUpdate, toast]);
+
+  // Active Hours handlers
+  const handleActiveHoursToggle = useCallback(async (enabled: boolean) => {
+    if (enabled) {
+      // Open configuration modal
+      setShowActiveHoursModal(true);
+    } else {
+      // Disable active hours
+      try {
+        const currentConfig = agent.configuration || {};
+        const updatedConfig = {
+          ...currentConfig,
+          activeHours: {
+            ...activeHoursConfig,
+            enabled: false,
+          },
+        };
+
+        await openClawService.updateSettings(agent.id, {
+          configuration: updatedConfig,
+        });
+
+        setActiveHoursConfig((prev) => ({
+          ...prev,
+          enabled: false,
+        }));
+
+        toast({
+          title: 'Active Hours Disabled',
+          description: 'Agent will now run heartbeats at all times',
+        });
+
+        // Refresh agent data
+        if (onAgentUpdate) {
+          await onAgentUpdate();
+        }
+      } catch (error) {
+        toast({
+          title: 'Failed to disable active hours',
+          description: error instanceof Error ? error.message : 'An error occurred',
+          variant: 'destructive',
+        });
+      }
+    }
+  }, [agent.id, agent.configuration, activeHoursConfig, onAgentUpdate, toast]);
+
+  const handleSaveActiveHours = useCallback(async (newActiveHours: ActiveHours) => {
+    try {
+      const currentConfig = agent.configuration || {};
+      const updatedConfig = {
+        ...currentConfig,
+        activeHours: newActiveHours,
+      };
+
+      await openClawService.updateSettings(agent.id, {
+        configuration: updatedConfig,
+      });
+
+      setActiveHoursConfig(newActiveHours);
+      setShowActiveHoursModal(false);
+
+      toast({
+        title: 'Active Hours Configured',
+        description: 'Agent will now only run heartbeats during configured hours',
+      });
+
+      // Refresh agent data
+      if (onAgentUpdate) {
+        await onAgentUpdate();
+      }
+    } catch (error) {
+      toast({
+        title: 'Failed to save active hours',
+        description: error instanceof Error ? error.message : 'An error occurred',
+        variant: 'destructive',
+      });
+    }
+  }, [agent.id, agent.configuration, onAgentUpdate, toast]);
+
+  const getActiveHoursSummary = useCallback(() => {
+    if (!activeHoursConfig.enabled || !activeHoursConfig.schedule) {
+      return '';
+    }
+
+    const enabledDays = Object.entries(activeHoursConfig.schedule)
+      .filter(([_, dayConfig]) => dayConfig.enabled)
+      .map(([day]) => day);
+
+    if (enabledDays.length === 0) {
+      return 'No days configured';
+    }
+
+    if (enabledDays.length === 7) {
+      return 'Every day';
+    }
+
+    return `${enabledDays.length} ${enabledDays.length === 1 ? 'day' : 'days'} configured`;
+  }, [activeHoursConfig]);
+
   return (
     <div className="space-y-8 max-w-3xl">
       {/* Agent Name + Model row */}
@@ -360,11 +538,23 @@ export default function AgentSettingsTab({
                 <Label className="text-xs font-semibold uppercase tracking-wider text-gray-500">
                   Active Hours
                 </Label>
-                <Switch
-                  checked={activeHours}
-                  onCheckedChange={setActiveHours}
-                  aria-label="Enable active hours"
-                />
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={activeHoursConfig.enabled}
+                    onCheckedChange={handleActiveHoursToggle}
+                    aria-label="Enable active hours"
+                  />
+                  {activeHoursConfig.enabled && (
+                    <button
+                      type="button"
+                      onClick={() => setShowActiveHoursModal(true)}
+                      className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+                    >
+                      <Clock className="h-3.5 w-3.5" />
+                      <span>{getActiveHoursSummary()}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -410,24 +600,50 @@ export default function AgentSettingsTab({
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-gray-900">API Keys</h3>
         <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-          {API_KEY_PROVIDERS.map((provider) => (
-            <div
-              key={provider.id}
-              className="flex items-center justify-between py-2 border-b border-gray-100"
-            >
-              <span className="text-sm text-gray-700">{provider.name}</span>
-              <button
-                type="button"
-                className={cn(
-                  'inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 transition-colors',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded'
-                )}
+          {API_KEY_PROVIDERS.map((provider) => {
+            const existingKey = agentConfig.apiKeys?.[provider.id as ApiKeyProviderId];
+            return (
+              <div
+                key={provider.id}
+                className="flex items-center justify-between py-2 border-b border-gray-100"
               >
-                <Plus className="h-3.5 w-3.5" />
-                <span className="text-xs">Add Key</span>
-              </button>
-            </div>
-          ))}
+                <div className="flex flex-col">
+                  <span className="text-sm text-gray-700">{provider.name}</span>
+                  {existingKey && (
+                    <span className="text-xs text-gray-400 font-mono">{existingKey.masked}</span>
+                  )}
+                </div>
+                {existingKey ? (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveApiKey(provider.id as ApiKeyProviderId)}
+                    className={cn(
+                      'inline-flex items-center gap-1 text-sm text-red-500 hover:text-red-700 transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded'
+                    )}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    <span className="text-xs">Remove</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedProvider(provider.id as ApiKeyProviderId);
+                      setShowApiKeyModal(true);
+                    }}
+                    className={cn(
+                      'inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded'
+                    )}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span className="text-xs">Add Key</span>
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -592,6 +808,28 @@ export default function AgentSettingsTab({
         }}
         onConfirm={handleDisconnectIntegration}
         integrationName={disconnectTarget === 'gmail' ? 'Gmail' : 'LinkedIn'}
+      />
+
+      {/* API Key Modal */}
+      {selectedProvider && (
+        <ApiKeyModal
+          open={showApiKeyModal}
+          onClose={() => {
+            setShowApiKeyModal(false);
+            setSelectedProvider(null);
+          }}
+          providerName={API_KEY_PROVIDERS.find(p => p.id === selectedProvider)?.name || ''}
+          providerId={selectedProvider}
+          onSave={handleSaveApiKey}
+        />
+      )}
+
+      {/* Active Hours Modal */}
+      <ActiveHoursModal
+        open={showActiveHoursModal}
+        onClose={() => setShowActiveHoursModal(false)}
+        activeHours={activeHoursConfig}
+        onSave={handleSaveActiveHours}
       />
     </div>
   );

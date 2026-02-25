@@ -1,12 +1,54 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useAgentList } from '@/hooks/useOpenClawAgents';
-import { MOCK_CHANNELS } from '@/lib/openclaw-mock-data';
+import { useUpdateAgentSettings } from '@/hooks/useOpenClawAgents';
 import { fadeUp } from '@/lib/openclaw-utils';
 import AgentPicker from '@/components/openclaw/AgentPicker';
 import ChannelRow from '@/components/openclaw/ChannelRow';
+import WhatsAppConnectionModal from '@/components/openclaw/WhatsAppConnectionModal';
+import TokenConnectionModal from '@/components/openclaw/TokenConnectionModal';
+import ComingSoonModal from '@/components/openclaw/ComingSoonModal';
+import DisconnectChannelDialog from '@/components/openclaw/DisconnectChannelDialog';
+import type { Channel, ChannelConfiguration } from '@/types/openclaw';
+
+// Define the static list of available channels
+const AVAILABLE_CHANNELS = [
+  {
+    id: 'whatsapp',
+    name: 'WhatsApp',
+    icon: 'whatsapp',
+    description: 'Connect to WhatsApp by scanning a QR code.',
+  },
+  {
+    id: 'telegram',
+    name: 'Telegram',
+    icon: 'telegram',
+    description: 'Connect a Telegram bot. Fastest to set up — just a bot token from @BotFather.',
+  },
+  {
+    id: 'slack',
+    name: 'Slack',
+    icon: 'slack',
+    description: 'Connect to Slack workspaces via Socket Mode or HTTP Events API.',
+  },
+  {
+    id: 'discord',
+    name: 'Discord',
+    icon: 'discord',
+    description: 'Connect a Discord bot to servers, channels, and DMs.',
+  },
+  {
+    id: 'microsoft-teams',
+    name: 'Microsoft Teams',
+    icon: 'teams',
+    description: 'Connect to Microsoft Teams via the Bot Framework (plugin-based channel).',
+  },
+] as const;
+
+type ChannelId = typeof AVAILABLE_CHANNELS[number]['id'];
+type ModalState = { type: ChannelId; channelName: string } | null;
 
 export default function OpenClawChannelsClient() {
   const { data } = useAgentList();
@@ -15,12 +57,141 @@ export default function OpenClawChannelsClient() {
     agents[0]?.id
   );
 
+  // Modal states
+  const [connectionModal, setConnectionModal] = useState<ModalState>(null);
+  const [disconnectDialog, setDisconnectDialog] = useState<ModalState>(null);
+
+  // Mutation for updating agent settings
+  const updateSettings = useUpdateAgentSettings(selectedAgentId || '');
+
+  // Get the selected agent
+  const selectedAgent = useMemo(
+    () => agents.find((a) => a.id === selectedAgentId),
+    [agents, selectedAgentId]
+  );
+
   // Update selection when agents load
   useEffect(() => {
     if (agents.length > 0 && !selectedAgentId) {
       setSelectedAgentId(agents[0].id);
     }
   }, [agents, selectedAgentId]);
+
+  // Get channel configuration from selected agent
+  const channelConfig = useMemo(() => {
+    if (!selectedAgent?.configuration) return {};
+    return (selectedAgent.configuration.channels || {}) as ChannelConfiguration;
+  }, [selectedAgent]);
+
+  // Generate channels list from static data + agent configuration
+  const channels: Channel[] = useMemo(() => {
+    return AVAILABLE_CHANNELS.map((channel) => {
+      const config = channelConfig[channel.id as keyof ChannelConfiguration];
+      const connected = config?.enabled || false;
+
+      return {
+        ...channel,
+        connected,
+        connectionDetails: connected
+          ? {
+              workspace: 'workspace' in (config || {}) ? (config as any).workspace : undefined,
+              username: 'botUsername' in (config || {}) ? (config as any).botUsername : undefined,
+              phoneNumber: 'phoneNumber' in (config || {}) ? (config as any).phoneNumber : undefined,
+              connectedAt: config?.connectedAt,
+            }
+          : undefined,
+      };
+    });
+  }, [channelConfig]);
+
+  // Handle connect button click
+  const handleConnect = (channel: Channel) => {
+    if (channel.connected) {
+      // If already connected, show disconnect dialog
+      setDisconnectDialog({ type: channel.id as ChannelId, channelName: channel.name });
+    } else {
+      // If not connected, show connection modal
+      setConnectionModal({ type: channel.id as ChannelId, channelName: channel.name });
+    }
+  };
+
+  // Handle WhatsApp connection
+  const handleWhatsAppConnect = async (data: { phoneNumber: string }) => {
+    if (!selectedAgent) return;
+
+    const updatedConfig = {
+      ...selectedAgent.configuration,
+      channels: {
+        ...(selectedAgent.configuration?.channels || {}),
+        whatsapp: {
+          enabled: true,
+          phoneNumber: data.phoneNumber,
+          connectedAt: new Date().toISOString(),
+        },
+      },
+    };
+
+    await updateSettings.mutateAsync({
+      configuration: updatedConfig,
+    });
+  };
+
+  // Handle token-based connection (Telegram, Discord, Slack)
+  const handleTokenConnect = async (
+    channelId: 'telegram' | 'discord' | 'slack',
+    data: { botToken: string; botUsername?: string }
+  ) => {
+    if (!selectedAgent) return;
+
+    const channelData =
+      channelId === 'slack'
+        ? {
+            enabled: true,
+            botToken: data.botToken,
+            workspace: data.botUsername,
+            connectedAt: new Date().toISOString(),
+          }
+        : {
+            enabled: true,
+            botToken: data.botToken,
+            botUsername: data.botUsername,
+            connectedAt: new Date().toISOString(),
+          };
+
+    const updatedConfig = {
+      ...selectedAgent.configuration,
+      channels: {
+        ...(selectedAgent.configuration?.channels || {}),
+        [channelId]: channelData,
+      },
+    };
+
+    await updateSettings.mutateAsync({
+      configuration: updatedConfig,
+    });
+  };
+
+  // Handle disconnect
+  const handleDisconnect = async () => {
+    if (!selectedAgent || !disconnectDialog) return;
+
+    const channelId = disconnectDialog.type;
+    const updatedConfig = {
+      ...selectedAgent.configuration,
+      channels: {
+        ...(selectedAgent.configuration?.channels || {}),
+        [channelId]: {
+          enabled: false,
+        },
+      },
+    };
+
+    await updateSettings.mutateAsync({
+      configuration: updatedConfig,
+    });
+
+    setDisconnectDialog(null);
+  };
 
   return (
     <div className="space-y-8">
@@ -67,17 +238,66 @@ export default function OpenClawChannelsClient() {
         </div>
 
         <div className="px-5">
-          {MOCK_CHANNELS.map((channel) => (
+          {channels.map((channel) => (
             <ChannelRow
               key={channel.id}
               channel={channel}
-              onConnect={() => {
-                // Connection logic would go here
-              }}
+              onConnect={() => handleConnect(channel)}
             />
           ))}
         </div>
       </motion.div>
+
+      {/* WhatsApp Connection Modal */}
+      <WhatsAppConnectionModal
+        open={connectionModal?.type === 'whatsapp'}
+        onOpenChange={(open) => !open && setConnectionModal(null)}
+        onConnect={handleWhatsAppConnect}
+      />
+
+      {/* Telegram Connection Modal */}
+      <TokenConnectionModal
+        open={connectionModal?.type === 'telegram'}
+        onOpenChange={(open) => !open && setConnectionModal(null)}
+        onConnect={(data) => handleTokenConnect('telegram', data)}
+        channelType="telegram"
+        channelName="Telegram"
+      />
+
+      {/* Discord Connection Modal */}
+      <TokenConnectionModal
+        open={connectionModal?.type === 'discord'}
+        onOpenChange={(open) => !open && setConnectionModal(null)}
+        onConnect={(data) => handleTokenConnect('discord', data)}
+        channelType="discord"
+        channelName="Discord"
+      />
+
+      {/* Slack Connection Modal */}
+      <TokenConnectionModal
+        open={connectionModal?.type === 'slack'}
+        onOpenChange={(open) => !open && setConnectionModal(null)}
+        onConnect={(data) => handleTokenConnect('slack', data)}
+        channelType="slack"
+        channelName="Slack"
+      />
+
+      {/* Microsoft Teams Coming Soon Modal */}
+      <ComingSoonModal
+        open={connectionModal?.type === 'microsoft-teams'}
+        onOpenChange={(open) => !open && setConnectionModal(null)}
+        channelName="Microsoft Teams"
+      />
+
+      {/* Disconnect Confirmation Dialog */}
+      {disconnectDialog && (
+        <DisconnectChannelDialog
+          open={true}
+          onOpenChange={(open) => !open && setDisconnectDialog(null)}
+          onConfirm={handleDisconnect}
+          channelName={disconnectDialog.channelName}
+        />
+      )}
     </div>
   );
 }
