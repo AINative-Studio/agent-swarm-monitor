@@ -1,12 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useAgentList } from '@/hooks/useOpenClawAgents';
 import { useSwarmHealth, useTimeline } from '@/hooks/useMonitoring';
-import { MOCK_TEMPLATES } from '@/lib/openclaw-mock-data';
+import { useTemplateList } from '@/hooks/useTemplates';
 import {
   fadeUp,
   formatRelativeTime,
@@ -101,10 +100,11 @@ export default function OpenClawHomeClient() {
   const { data, isLoading } = useAgentList();
   const { data: health } = useSwarmHealth();
   const { data: timeline } = useTimeline({ limit: 1, offset: 0 });
+  const { data: templateData } = useTemplateList();
 
   const agents = data?.agents ?? [];
   const runningCount = agents.filter((a) => a.status === 'running').length;
-  const homeTemplates = useMemo(() => MOCK_TEMPLATES.slice(0, 4), []);
+  const homeTemplates = (templateData?.templates ?? []).slice(0, 4);
 
   const healthLabel = health?.status
       ? health.status.charAt(0).toUpperCase() + health.status.slice(1)

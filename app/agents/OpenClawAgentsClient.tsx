@@ -6,12 +6,9 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { useAgentList, useCreateAgent } from '@/hooks/useOpenClawAgents';
-import { MOCK_TEMPLATES } from '@/lib/openclaw-mock-data';
 import { fadeUp, formatRelativeTime } from '@/lib/openclaw-utils';
 import AgentStatusBadge from '@/components/openclaw/AgentStatusBadge';
-import TemplateGrid from '@/components/openclaw/TemplateGrid';
 import CreateAgentDialog from '@/components/openclaw/CreateAgentDialog';
 import type { CreateAgentRequest } from '@/types/openclaw';
 
@@ -23,7 +20,6 @@ export default function OpenClawAgentsClient() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const agents = useMemo(() => data?.agents ?? [], [data?.agents]);
-  const templates = useMemo(() => MOCK_TEMPLATES.slice(0, 4), []);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return agents;
@@ -140,24 +136,6 @@ export default function OpenClawAgentsClient() {
             )}
           </div>
         )}
-      </motion.div>
-
-      {/* Template section */}
-      <Separator className="bg-gray-100" />
-
-      <motion.div
-        custom={3}
-        variants={fadeUp}
-        initial="hidden"
-        animate="visible"
-      >
-        <TemplateGrid
-          templates={templates}
-          title="Start from a template"
-          onSelectTemplate={(t) =>
-            router.push(`/templates?selected=${t.id}`)
-          }
-        />
       </motion.div>
 
       {/* Create dialog */}
