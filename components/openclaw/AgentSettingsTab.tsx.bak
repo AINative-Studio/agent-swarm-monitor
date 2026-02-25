@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
-import { Plus, ExternalLink, Play, RotateCcw, Trash2, X, Clock } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Plus, ExternalLink, Play, RotateCcw, Trash2, Send } , Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -15,29 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
-import type { OpenClawAgent, UpdateAgentSettingsRequest, HeartbeatInterval, Integration } from '@/types/openclaw';
-import type { AgentConfiguration } from '@/types/agent-configuration';
-import { API_KEY_PROVIDERS } from '@/types/agent-configuration';
+import type { OpenClawAgent, UpdateAgentSettingsRequest, HeartbeatInterval } from '@/types/openclaw', ActiveHours } from '@/types/openclaw';
+import type { ActiveHours } from '@/types/agent-configuration';
+import { MOCK_INTEGRATIONS, MOCK_API_KEY_PROVIDERS } from '@/lib/openclaw-mock-data';
 import { MODEL_OPTIONS_RAW as MODEL_OPTIONS, HEARTBEAT_OPTIONS } from '@/lib/openclaw-utils';
-import { maskApiKey } from '@/lib/api-key-utils';
 import IntegrationRow from './IntegrationRow';
-import GmailIntegrationModal from './GmailIntegrationModal';
-import LinkedInIntegrationModal from './LinkedInIntegrationModal';
-import DisconnectIntegrationDialog from './DisconnectIntegrationDialog';
-import ApiKeyModal from './ApiKeyModal';
-import openClawService from '@/lib/openclaw-service';
-import { useToast } from '@/hooks/use-toast';
+import ActiveHoursModal from './ActiveHoursModal';
 
 interface AgentSettingsTabProps {
   agent: OpenClawAgent;
@@ -45,7 +29,7 @@ interface AgentSettingsTabProps {
   onDelete: () => void;
   onRunHeartbeat: () => void;
   onRestart: () => void;
-  onAgentUpdate?: () => Promise<void>; // Callback to refresh agent data
+  onSendFixPrompt?: (message: string) => Promise<void>;
 }
 
 export default function AgentSettingsTab({
@@ -54,10 +38,8 @@ export default function AgentSettingsTab({
   onDelete,
   onRunHeartbeat,
   onRestart,
-  onAgentUpdate,
+  onSendFixPrompt,
 }: AgentSettingsTabProps) {
-  const { toast } = useToast();
-
   const [name, setName] = useState(agent.name);
   const [model, setModel] = useState(agent.model);
   const [persona, setPersona] = useState(agent.persona ?? '');
@@ -71,12 +53,34 @@ export default function AgentSettingsTab({
   );
   const [fixPrompt, setFixPrompt] = useState('');
 
-  // Integration modal states
-  const [showGmailModal, setShowGmailModal] = useState(false);
-  const [showLinkedInModal, setShowLinkedInModal] = useState(false);
-  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
-  const [disconnectTarget, setDisconnectTarget] = useState<'gmail' | 'linkedin' | null>(null);
-  const [isSavingIntegration, setIsSavingIntegration] = useState(false);
+
+  const handleActiveHoursToggle = useCallback((enabled: boolean) => {
+    if (enabled) {
+      setShowActiveHoursModal(true);
+    } else {
+      setActiveHoursConfig((prev) => ({
+        ...prev,
+        enabled: false,
+      }));
+    }
+  }, []);
+
+  const handleSaveActiveHours = useCallback((newActiveHours: ActiveHours) => {
+    setActiveHoursConfig(newActiveHours);
+  }, []);
+
+  const getActiveHoursSummary = useCallback(() => {
+    if (!activeHoursConfig.enabled) {
+      return 'Not configured';
+    }
+
+    const enabledDays = Object.keys(activeHoursConfig.schedule).length;
+    if (enabledDays === 0) {
+      return 'No days scheduled';
+    }
+
+    return `${enabledDays} day${enabledDays !== 1 ? 's' : ''} configured`;
+  }, [activeHoursConfig]);
 
   const handleSave = useCallback(() => {
     onSave({
@@ -89,181 +93,12 @@ export default function AgentSettingsTab({
           ? heartbeatChecklist.split('\n').filter((line) => line.trim())
           : undefined,
       },
+      configuration: {
+        ...agent.configuration,
+        activeHours: activeHoursConfig,
+      },
     });
-  }, [model, persona, heartbeatEnabled, heartbeatInterval, heartbeatChecklist, onSave]);
-
-  // Parse agent configuration
-  const agentConfig = useMemo<AgentConfiguration>(() => {
-    return (agent.configuration as AgentConfiguration) || {};
-  }, [agent.configuration]);
-
-  // Generate integrations list from configuration
-  const integrations = useMemo<Integration[]>(() => {
-    const gmailIntegration = agentConfig.integrations?.gmail;
-    const linkedInIntegration = agentConfig.integrations?.linkedin;
-
-    return [
-      {
-        id: 'gmail',
-        name: 'Gmail',
-        icon: 'gmail',
-        description: 'Receive emails and forward them to your agent for processing.',
-        connected: gmailIntegration?.enabled || false,
-      },
-      {
-        id: 'linkedin',
-        name: 'LinkedIn',
-        icon: 'linkedin',
-        description: 'Post content, read profiles, send messages (via browser), and manage connections.',
-        connected: linkedInIntegration?.enabled || false,
-        comingSoon: true,
-      },
-    ];
-  }, [agentConfig]);
-
-  // Handle Gmail integration save
-  const handleSaveGmail = useCallback(async (email: string) => {
-    setIsSavingIntegration(true);
-    try {
-      const updatedConfig: AgentConfiguration = {
-        ...agentConfig,
-        integrations: {
-          ...agentConfig.integrations,
-          gmail: {
-            enabled: true,
-            email,
-            lastSyncedAt: new Date().toISOString(),
-          },
-        },
-      };
-
-      await openClawService.updateSettings(agent.id, {
-        configuration: updatedConfig,
-      });
-
-      toast({
-        title: 'Gmail Connected',
-        description: `Connected Gmail account: ${email}`,
-      });
-
-      // Refresh agent data
-      if (onAgentUpdate) {
-        await onAgentUpdate();
-      }
-    } catch (error) {
-      toast({
-        title: 'Failed to connect Gmail',
-        description: error instanceof Error ? error.message : 'An error occurred',
-        variant: 'destructive',
-      });
-      throw error;
-    } finally {
-      setIsSavingIntegration(false);
-    }
-  }, [agent.id, agentConfig, onAgentUpdate, toast]);
-
-  // Handle LinkedIn integration save
-  const handleSaveLinkedIn = useCallback(async (username: string) => {
-    setIsSavingIntegration(true);
-    try {
-      const updatedConfig: AgentConfiguration = {
-        ...agentConfig,
-        integrations: {
-          ...agentConfig.integrations,
-          linkedin: {
-            enabled: true,
-            username,
-            lastSyncedAt: new Date().toISOString(),
-          },
-        },
-      };
-
-      await openClawService.updateSettings(agent.id, {
-        configuration: updatedConfig,
-      });
-
-      toast({
-        title: 'LinkedIn Connected',
-        description: `Connected LinkedIn account: ${username}`,
-      });
-
-      // Refresh agent data
-      if (onAgentUpdate) {
-        await onAgentUpdate();
-      }
-    } catch (error) {
-      toast({
-        title: 'Failed to connect LinkedIn',
-        description: error instanceof Error ? error.message : 'An error occurred',
-        variant: 'destructive',
-      });
-      throw error;
-    } finally {
-      setIsSavingIntegration(false);
-    }
-  }, [agent.id, agentConfig, onAgentUpdate, toast]);
-
-  // Handle integration connect button click
-  const handleIntegrationConnect = useCallback((integrationId: string) => {
-    const integration = integrations.find((i) => i.id === integrationId);
-    if (!integration) return;
-
-    if (integration.connected) {
-      // Show disconnect dialog
-      setDisconnectTarget(integrationId as 'gmail' | 'linkedin');
-      setShowDisconnectDialog(true);
-    } else {
-      // Show connect modal
-      if (integrationId === 'gmail') {
-        setShowGmailModal(true);
-      } else if (integrationId === 'linkedin') {
-        setShowLinkedInModal(true);
-      }
-    }
-  }, [integrations]);
-
-  // Handle integration disconnect
-  const handleDisconnectIntegration = useCallback(async () => {
-    if (!disconnectTarget) return;
-
-    setIsSavingIntegration(true);
-    try {
-      const updatedConfig: AgentConfiguration = {
-        ...agentConfig,
-        integrations: {
-          ...agentConfig.integrations,
-          [disconnectTarget]: {
-            enabled: false,
-          },
-        },
-      };
-
-      await openClawService.updateSettings(agent.id, {
-        configuration: updatedConfig,
-      });
-
-      toast({
-        title: 'Integration Disconnected',
-        description: `${disconnectTarget === 'gmail' ? 'Gmail' : 'LinkedIn'} has been disconnected`,
-      });
-
-      // Refresh agent data
-      if (onAgentUpdate) {
-        await onAgentUpdate();
-      }
-
-      setShowDisconnectDialog(false);
-      setDisconnectTarget(null);
-    } catch (error) {
-      toast({
-        title: 'Failed to disconnect integration',
-        description: error instanceof Error ? error.message : 'An error occurred',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSavingIntegration(false);
-    }
-  }, [agent.id, agentConfig, disconnectTarget, onAgentUpdate, toast]);
+  }, [model, persona, heartbeatEnabled, heartbeatInterval, heartbeatChecklist, activeHoursConfig, agent.configuration, onSave]);
 
   return (
     <div className="space-y-8 max-w-3xl">
@@ -360,11 +195,23 @@ export default function AgentSettingsTab({
                 <Label className="text-xs font-semibold uppercase tracking-wider text-gray-500">
                   Active Hours
                 </Label>
-                <Switch
-                  checked={activeHours}
-                  onCheckedChange={setActiveHours}
-                  aria-label="Enable active hours"
-                />
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={activeHoursConfig.enabled}
+                    onCheckedChange={handleActiveHoursToggle}
+                    aria-label="Enable active hours"
+                  />
+                  {activeHoursConfig.enabled && (
+                    <button
+                      type="button"
+                      onClick={() => setShowActiveHoursModal(true)}
+                      className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+                    >
+                      <Clock className="h-3.5 w-3.5" />
+                      <span>{getActiveHoursSummary()}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -394,11 +241,10 @@ export default function AgentSettingsTab({
           <p className="text-sm text-gray-500 mt-0.5">Connect external services</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white px-4">
-          {integrations.map((integration) => (
+          {MOCK_INTEGRATIONS.map((integration) => (
             <IntegrationRow
               key={integration.id}
               integration={integration}
-              onConnect={() => handleIntegrationConnect(integration.id)}
             />
           ))}
         </div>
@@ -410,7 +256,7 @@ export default function AgentSettingsTab({
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-gray-900">API Keys</h3>
         <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-          {API_KEY_PROVIDERS.map((provider) => (
+          {MOCK_API_KEY_PROVIDERS.map((provider) => (
             <div
               key={provider.id}
               className="flex items-center justify-between py-2 border-b border-gray-100"
@@ -438,38 +284,23 @@ export default function AgentSettingsTab({
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Control</h3>
           <p className="text-sm text-gray-500 mt-0.5">
-            Access the OpenClaw Gateway dashboard to monitor all active sessions.
+            Access your agent&apos;s built-in management dashboard.
           </p>
         </div>
         <Button
           variant="outline"
           className="border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
-          disabled={
-            !agent.openclawSessionKey ||
-            !['running', 'paused'].includes(agent.status?.toLowerCase() || '')
-          }
+          disabled={!agent.openclawSessionKey}
           onClick={() => {
+            if (!agent.openclawSessionKey) return;
+
             const gatewayUrl = process.env.NEXT_PUBLIC_OPENCLAW_GATEWAY_URL || 'http://localhost:18789';
-
-            // Convert ws:// to http:// if needed
-            const httpUrl = gatewayUrl
-              .replace('ws://', 'http://')
-              .replace('wss://', 'https://');
-
-            // Check if URL is configured
-            if (!httpUrl || httpUrl === '') {
-              alert('OpenClaw Gateway URL not configured');
-              return;
-            }
-
-            // Open gateway root URL in new tab
-            window.open(httpUrl, '_blank', 'noopener,noreferrer');
+            const controlUrl = `${gatewayUrl}/control/${agent.openclawSessionKey}`;
+            window.open(controlUrl, '_blank', 'noopener,noreferrer');
           }}
           title={
             !agent.openclawSessionKey
-              ? 'Agent must be provisioned first'
-              : !['running', 'paused'].includes(agent.status?.toLowerCase() || '')
-              ? 'Agent must be running or paused'
+              ? 'Agent must be provisioned before accessing Control UI'
               : 'Open OpenClaw Control UI in new window'
           }
         >
@@ -479,11 +310,6 @@ export default function AgentSettingsTab({
         {!agent.openclawSessionKey && (
           <p className="text-xs text-gray-400 italic">
             Control UI will be available once the agent is provisioned.
-          </p>
-        )}
-        {agent.openclawSessionKey && !['running', 'paused'].includes(agent.status?.toLowerCase() || '') && (
-          <p className="text-xs text-gray-400 italic">
-            Control UI is only accessible when the agent is running or paused.
           </p>
         )}
       </div>
@@ -569,29 +395,12 @@ export default function AgentSettingsTab({
         </div>
       </div>
 
-      {/* Integration Modals */}
-      <GmailIntegrationModal
-        open={showGmailModal}
-        onClose={() => setShowGmailModal(false)}
-        onSave={handleSaveGmail}
-        currentEmail={agentConfig.integrations?.gmail?.email}
-      />
-
-      <LinkedInIntegrationModal
-        open={showLinkedInModal}
-        onClose={() => setShowLinkedInModal(false)}
-        onSave={handleSaveLinkedIn}
-        currentUsername={agentConfig.integrations?.linkedin?.username}
-      />
-
-      <DisconnectIntegrationDialog
-        open={showDisconnectDialog}
-        onClose={() => {
-          setShowDisconnectDialog(false);
-          setDisconnectTarget(null);
-        }}
-        onConfirm={handleDisconnectIntegration}
-        integrationName={disconnectTarget === 'gmail' ? 'Gmail' : 'LinkedIn'}
+      {/* Active Hours Modal */}
+      <ActiveHoursModal
+        open={showActiveHoursModal}
+        onClose={() => setShowActiveHoursModal(false)}
+        activeHours={activeHoursConfig}
+        onSave={handleSaveActiveHours}
       />
     </div>
   );

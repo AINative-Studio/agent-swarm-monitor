@@ -1,133 +1,107 @@
-// Integration types
+/**
+ * Agent Configuration Types
+ *
+ * These types define the structure of agent.configuration field
+ * which stores various settings including integrations, active hours, etc.
+ */
+
 export interface GmailIntegration {
   enabled: boolean;
   email?: string;
-  accessToken?: string;
-  refreshToken?: string;
-  tokenExpiry?: string;
+  lastSyncedAt?: string;
 }
 
 export interface LinkedInIntegration {
   enabled: boolean;
-  accessToken?: string;
-  refreshToken?: string;
-  tokenExpiry?: string;
-}
-
-// API Key types
-export interface ApiKeyConfig {
-  key: string;
-  masked: string;
-  addedAt?: string;
-}
-
-// Channel types
-export interface SlackChannel {
-  enabled: boolean;
-  botToken?: string;
-  workspaceId?: string;
-  workspaceName?: string;
-  socketMode?: boolean;
-}
-
-export interface TelegramChannel {
-  enabled: boolean;
-  botToken?: string;
   username?: string;
+  lastSyncedAt?: string;
 }
 
-export interface WhatsAppChannel {
+export interface AgentIntegrations {
+  gmail?: GmailIntegration;
+  linkedin?: LinkedInIntegration;
+}
+
+export interface DaySchedule {
   enabled: boolean;
-  sessionData?: string; // QR code session
-  phoneNumber?: string;
+  startTime: string; // HH:mm format (24-hour)
+  endTime: string;   // HH:mm format (24-hour)
 }
 
-export interface DiscordChannel {
-  enabled: boolean;
-  botToken?: string;
-  guildIds?: string[];
-}
-
-export interface MicrosoftTeamsChannel {
-  enabled: boolean;
-  appId?: string;
-  appPassword?: string;
-  tenantId?: string;
-}
-
-// Active Hours types
-export interface TimeRange {
-  start: string; // HH:mm format
-  end: string;
-}
-
-export interface ActiveHoursSchedule {
-  monday?: TimeRange;
-  tuesday?: TimeRange;
-  wednesday?: TimeRange;
-  thursday?: TimeRange;
-  friday?: TimeRange;
-  saturday?: TimeRange;
-  sunday?: TimeRange;
-}
+export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
 
 export interface ActiveHours {
   enabled: boolean;
+  schedule: Partial<Record<DayOfWeek, DaySchedule>>;
   timezone: string;
-  schedule: ActiveHoursSchedule;
 }
 
-// Fix Prompt types
-export interface FixPrompt {
-  timestamp: string;
-  prompt: string;
-  resolved: boolean;
-  resolvedAt?: string;
+// Helper constants
+export const DEFAULT_ACTIVE_HOURS: ActiveHours = {
+  enabled: false,
+  timezone: 'America/New_York',
+  schedule: {},
+};
+
+export const COMMON_TIMEZONES = [
+  { value: 'America/New_York', label: 'Eastern Time (ET)' },
+  { value: 'America/Chicago', label: 'Central Time (CT)' },
+  { value: 'America/Denver', label: 'Mountain Time (MT)' },
+  { value: 'America/Los_Angeles', label: 'Pacific Time (PT)' },
+  { value: 'America/Anchorage', label: 'Alaska Time (AKT)' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii Time (HST)' },
+  { value: 'Europe/London', label: 'London (GMT/BST)' },
+  { value: 'Europe/Paris', label: 'Paris (CET/CEST)' },
+  { value: 'Europe/Berlin', label: 'Berlin (CET/CEST)' },
+  { value: 'Asia/Tokyo', label: 'Tokyo (JST)' },
+  { value: 'Asia/Shanghai', label: 'Shanghai (CST)' },
+  { value: 'Asia/Dubai', label: 'Dubai (GST)' },
+  { value: 'Asia/Singapore', label: 'Singapore (SGT)' },
+  { value: 'Australia/Sydney', label: 'Sydney (AEDT/AEST)' },
+];
+
+export const DAYS_OF_WEEK: { value: DayOfWeek; label: string }[] = [
+  { value: 'monday', label: 'Monday' },
+  { value: 'tuesday', label: 'Tuesday' },
+  { value: 'wednesday', label: 'Wednesday' },
+  { value: 'thursday', label: 'Thursday' },
+  { value: 'friday', label: 'Friday' },
+  { value: 'saturday', label: 'Saturday' },
+  { value: 'sunday', label: 'Sunday' },
+];
+
+export interface ApiKeyConfig {
+  key: string;
+  masked: string;
+  addedAt: string;
 }
 
-// Main Configuration Interface
+export interface ApiKeyProviderConfig {
+  [provider: string]: ApiKeyConfig;
+}
+
 export interface AgentConfiguration {
-  integrations?: {
-    gmail?: GmailIntegration;
-    linkedin?: LinkedInIntegration;
-  };
-
-  apiKeys?: {
-    anthropic?: ApiKeyConfig;
-    googleAi?: ApiKeyConfig;
-    mistral?: ApiKeyConfig;
-    veniceAi?: ApiKeyConfig;
-    minimax?: ApiKeyConfig;
-    openai?: ApiKeyConfig;
-    openrouter?: ApiKeyConfig;
-    groq?: ApiKeyConfig;
-    moonshotAi?: ApiKeyConfig;
-    twoAi?: ApiKeyConfig;
-    cerebras?: ApiKeyConfig;
-  };
-
-  channels?: {
-    slack?: SlackChannel;
-    telegram?: TelegramChannel;
-    whatsapp?: WhatsAppChannel;
-    discord?: DiscordChannel;
-    microsoftTeams?: MicrosoftTeamsChannel;
-  };
-
+  integrations?: AgentIntegrations;
   activeHours?: ActiveHours;
-
-  fixPrompts?: FixPrompt[];
+  apiKeys?: ApiKeyProviderConfig;
+  [key: string]: unknown; // Allow other configuration fields
 }
 
-// Utility type for partial updates
-export type AgentConfigurationUpdate = Partial<AgentConfiguration>;
+/**
+ * List of supported API key providers
+ */
+export const API_KEY_PROVIDERS = [
+  { id: 'anthropic', name: 'Anthropic' },
+  { id: 'google-ai', name: 'Google AI' },
+  { id: 'mistral', name: 'Mistral' },
+  { id: 'venice-ai', name: 'Venice AI' },
+  { id: 'minimax', name: 'MiniMax' },
+  { id: 'openai', name: 'OpenAI' },
+  { id: 'openrouter', name: 'OpenRouter' },
+  { id: 'groq', name: 'Groq' },
+  { id: 'moonshot-ai', name: 'Moonshot AI' },
+  { id: '2-ai', name: '2.AI' },
+  { id: 'cerebras', name: 'Cerebras' },
+] as const;
 
-// Helper functions
-export function getDefaultConfiguration(): AgentConfiguration {
-  return {};
-}
-
-export function maskApiKey(key: string): string {
-  if (!key || key.length <= 7) return '***';
-  return `${key.slice(0, 3)}...${key.slice(-4)}`;
-}
+export type ApiKeyProviderId = typeof API_KEY_PROVIDERS[number]['id'];

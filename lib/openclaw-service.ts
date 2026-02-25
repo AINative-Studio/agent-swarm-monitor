@@ -55,6 +55,10 @@ class OpenClawService {
             `${this.basePath}/${agentId}/heartbeat`
         );
     }
+
+    async sendMessage(agentId: string, data: { message: string }): Promise<any> {
+        return apiClient.post(`${this.basePath}/${agentId}/message`, data);
+    }
 }
 
 const openClawService = new OpenClawService();
