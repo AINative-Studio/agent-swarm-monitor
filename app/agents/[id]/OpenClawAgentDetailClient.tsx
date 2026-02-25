@@ -45,7 +45,7 @@ export default function OpenClawAgentDetailClient({
   agentId,
 }: OpenClawAgentDetailClientProps) {
   const router = useRouter();
-  const { data: agent, isLoading, error } = useAgent(agentId);
+  const { data: agent, isLoading, error, refetch } = useAgent(agentId);
   const pauseAgent = usePauseAgent();
   const resumeAgent = useResumeAgent();
   const updateSettings = useUpdateAgentSettings(agentId);
@@ -231,6 +231,9 @@ export default function OpenClawAgentDetailClient({
             onDelete={handleDelete}
             onRunHeartbeat={handleRunHeartbeat}
             onRestart={handleRestart}
+            onAgentUpdate={async () => {
+              await refetch();
+            }}
           />
         </TabsContent>
 
