@@ -1,4 +1,7 @@
-import { AgentConfiguration } from './agent-configuration';
+import { AgentConfiguration, AgentChannels } from './agent-configuration';
+
+// Re-export as ChannelConfiguration for channels page
+export type ChannelConfiguration = AgentChannels;
 
 export type AgentStatus = 'provisioning' | 'running' | 'paused' | 'stopped' | 'failed';
 export type HeartbeatInterval = '5m' | '15m' | '30m' | '1h' | '2h';
@@ -117,6 +120,12 @@ export interface Channel {
   icon: string;
   description: string;
   connected: boolean;
+  connectionDetails?: {
+    workspace?: string;
+    username?: string;
+    phoneNumber?: string;
+    connectedAt?: string;
+  };
 }
 
 export interface TeamMember {

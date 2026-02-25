@@ -17,6 +17,47 @@ export interface LinkedInIntegration {
   lastSyncedAt?: string;
 }
 
+export interface WhatsAppChannel {
+  enabled: boolean;
+  phoneNumber?: string;
+  connectedAt?: string;
+}
+
+export interface TelegramChannel {
+  enabled: boolean;
+  botToken?: string;
+  botUsername?: string;
+  connectedAt?: string;
+}
+
+export interface SlackChannel {
+  enabled: boolean;
+  botToken?: string;
+  workspace?: string;
+  connectedAt?: string;
+}
+
+export interface DiscordChannel {
+  enabled: boolean;
+  botToken?: string;
+  botUsername?: string;
+  connectedAt?: string;
+}
+
+export interface MicrosoftTeamsChannel {
+  enabled: boolean;
+  appId?: string;
+  connectedAt?: string;
+}
+
+export interface AgentChannels {
+  whatsapp?: WhatsAppChannel;
+  telegram?: TelegramChannel;
+  slack?: SlackChannel;
+  discord?: DiscordChannel;
+  'microsoft-teams'?: MicrosoftTeamsChannel;
+}
+
 export interface AgentIntegrations {
   gmail?: GmailIntegration;
   linkedin?: LinkedInIntegration;
@@ -82,6 +123,7 @@ export interface ApiKeyProviderConfig {
 
 export interface AgentConfiguration {
   integrations?: AgentIntegrations;
+  channels?: AgentChannels;
   activeHours?: ActiveHours;
   apiKeys?: ApiKeyProviderConfig;
   [key: string]: unknown; // Allow other configuration fields
