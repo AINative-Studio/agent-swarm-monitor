@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { Plus, ExternalLink, Play, RotateCcw, Trash2, X, Clock } from 'lucide-react';
+import { Plus, ExternalLink, Play, RotateCcw, Trash2, X, Clock, Send, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -92,6 +92,7 @@ export default function AgentSettingsTab({
     agent.heartbeatChecklist?.join('\n') ?? ''
   );
   const [fixPrompt, setFixPrompt] = useState('');
+  const [isSendingFixPrompt, setIsSendingFixPrompt] = useState(false);
 
   // Integration modal states
   const [showGmailModal, setShowGmailModal] = useState(false);
@@ -443,6 +444,44 @@ export default function AgentSettingsTab({
     return `${enabledDays.length} ${enabledDays.length === 1 ? 'day' : 'days'} configured`;
   }, [activeHoursConfig]);
 
+  // Handle fix prompt submission
+  const handleSubmitFixPrompt = useCallback(async () => {
+    if (!fixPrompt.trim()) return;
+
+    setIsSendingFixPrompt(true);
+    try {
+      await openClawService.sendMessage(agent.id, {
+        message: `[FIX PROMPT] ${fixPrompt}`,
+      });
+
+      toast({
+        title: 'Fix Prompt Sent',
+        description: 'Your fix prompt has been sent to the agent',
+      });
+
+      setFixPrompt(''); // Clear input after successful send
+    } catch (error) {
+      toast({
+        title: 'Failed to Send Fix Prompt',
+        description: error instanceof Error ? error.message : 'An error occurred',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingFixPrompt(false);
+    }
+  }, [agent.id, fixPrompt, toast]);
+
+  // Handle Enter key for fix prompt submission
+  const handleFixPromptKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        handleSubmitFixPrompt();
+      }
+    },
+    [handleSubmitFixPrompt]
+  );
+
   return (
     <div className="space-y-8 max-w-3xl">
       {/* Agent Name + Model row */}
@@ -674,7 +713,11 @@ export default function AgentSettingsTab({
 
             // Check if URL is configured
             if (!httpUrl || httpUrl === '') {
-              alert('OpenClaw Gateway URL not configured');
+              toast({
+                title: 'Configuration Error',
+                description: 'OpenClaw Gateway URL not configured. Please set NEXT_PUBLIC_OPENCLAW_GATEWAY_URL.',
+                variant: 'destructive',
+              });
               return;
             }
 
@@ -726,19 +769,43 @@ export default function AgentSettingsTab({
             className="border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
           >
             <Play className="h-3.5 w-3.5 mr-1.5" />
-            Run Once
-          </Button>
-        </div>
-
         {/* Add Fix Prompt */}
-        <div className="flex items-center gap-3 py-2">
-          <div className="flex-1">
-            <p className="text-sm font-medium text-gray-900">Add Fix Prompt</p>
-            <p className="text-sm text-gray-500">Supply a human hint, config fix, or debug assist.</p>
+        <div className="py-2">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Add Fix Prompt</p>
+              <p className="text-sm text-gray-500">Supply a human hint, config fix, or debug assist.</p>
+            </div>
+            <span className="text-xs text-gray-400">{fixPrompt.length}/500</span>
           </div>
+          <div className="flex gap-2">
+            <Textarea
+              value={fixPrompt}
+              onChange={(e) => setFixPrompt(e.target.value.slice(0, 500))}
+              onKeyDown={handleFixPromptKeyDown}
+              placeholder="Provide debugging hints or configuration fixes..."
+              rows={3}
+              className="bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 resize-none"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSubmitFixPrompt}
+              disabled={!fixPrompt.trim() || isSendingFixPrompt}
+              className="border-gray-300 text-gray-700 bg-white hover:bg-gray-50 h-fit"
+            >
+              {isSendingFixPrompt ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <>
+                  <Send className="h-3.5 w-3.5 mr-1.5" />
+                  Send
+                </>
+              )}
+            </Button>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Press Enter to send, Shift+Enter for new line</p>
         </div>
-        <Input
-          value={fixPrompt}
           onChange={(e) => setFixPrompt(e.target.value)}
           placeholder="Enter a fix prompt..."
           className="bg-white border-gray-200 text-gray-900 placeholder:text-gray-400"
