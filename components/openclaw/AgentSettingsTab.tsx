@@ -443,6 +443,43 @@ export default function AgentSettingsTab({
 
     return `${enabledDays.length} ${enabledDays.length === 1 ? 'day' : 'days'} configured`;
   }, [activeHoursConfig]);
+  // Handle fix prompt submission
+  const handleSubmitFixPrompt = useCallback(async () => {
+    if (!fixPrompt.trim()) return;
+
+    setIsSendingFixPrompt(true);
+    try {
+      await openClawService.sendMessage(agent.id, {
+        message: `[FIX PROMPT] ${fixPrompt}`,
+      });
+
+      toast({
+        title: 'Fix Prompt Sent',
+        description: 'Your fix prompt has been sent to the agent',
+      });
+
+      setFixPrompt(''); // Clear input after successful send
+    } catch (error) {
+      toast({
+        title: 'Failed to Send Fix Prompt',
+        description: error instanceof Error ? error.message : 'An error occurred',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingFixPrompt(false);
+    }
+  }, [agent.id, fixPrompt, toast]);
+
+  // Handle Enter key for fix prompt submission
+  const handleFixPromptKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        handleSubmitFixPrompt();
+      }
+    },
+    [handleSubmitFixPrompt]
+  );
 
   // Handle fix prompt submission
   const handleSubmitFixPrompt = useCallback(async () => {
@@ -806,10 +843,6 @@ export default function AgentSettingsTab({
           </div>
           <p className="text-xs text-gray-400 mt-1">Press Enter to send, Shift+Enter for new line</p>
         </div>
-          onChange={(e) => setFixPrompt(e.target.value)}
-          placeholder="Enter a fix prompt..."
-          className="bg-white border-gray-200 text-gray-900 placeholder:text-gray-400"
-        />
 
         {/* Restart Agent */}
         <div className="flex items-center justify-between py-2">
