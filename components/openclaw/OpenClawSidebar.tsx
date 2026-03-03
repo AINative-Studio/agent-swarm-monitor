@@ -40,16 +40,16 @@ const navItems: NavItem[] = [
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
-interface Organization {
+interface Workspace {
   id: string;
   name: string;
   slug: string;
 }
 
-const STUB_ORGS: Organization[] = [
-  { id: 'org_1', name: 'AINative Studio', slug: 'ainative-studio' },
-  { id: 'org_2', name: 'AgentClaw Labs', slug: 'agentclaw-labs' },
-  { id: 'org_3', name: 'Personal', slug: 'personal' },
+const STUB_WORKSPACES: Organization[] = [
+  { id: 'workspace_1', name: 'AINative Studio', slug: 'ainative-studio' },
+  { id: 'workspace_2', name: 'AgentClaw Labs', slug: 'agentclaw-labs' },
+  { id: 'workspace_3', name: 'Personal', slug: 'personal' },
 ];
 
 interface OpenClawSidebarProps {
@@ -66,22 +66,22 @@ export default function OpenClawSidebar({
   className,
 }: OpenClawSidebarProps) {
   const pathname = usePathname();
-  const [activeOrg, setActiveOrg] = useState<Organization>(STUB_ORGS[0]);
-  const [orgPickerOpen, setOrgPickerOpen] = useState(false);
-  const orgPickerRef = useRef<HTMLDivElement>(null);
+  const [activeWorkspace, setActiveOrg] = useState<Organization>(STUB_WORKSPACES[0]);
+  const [workspacePickerOpen, setOrgPickerOpen] = useState(false);
+  const workspacePickerRef = useRef<HTMLDivElement>(null);
 
   const handleClickOutside = useCallback((e: MouseEvent) => {
-    if (orgPickerRef.current && !orgPickerRef.current.contains(e.target as Node)) {
+    if (workspacePickerRef.current && !workspacePickerRef.current.contains(e.target as Node)) {
       setOrgPickerOpen(false);
     }
   }, []);
 
   useEffect(() => {
-    if (orgPickerOpen) {
+    if (workspacePickerOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [orgPickerOpen, handleClickOutside]);
+  }, [workspacePickerOpen, handleClickOutside]);
 
   const isActive = (href: string) => {
     if (href === '/') {
@@ -99,19 +99,19 @@ export default function OpenClawSidebar({
       role="navigation"
       aria-label="OpenClaw navigation"
     >
-      {/* Organisation picker */}
-      <div className="relative px-2 pt-4 pb-4" ref={orgPickerRef}>
+      {/* Workspace picker */}
+      <div className="relative px-2 pt-4 pb-4" ref={workspacePickerRef}>
         <button
           type="button"
           onClick={() => setOrgPickerOpen((prev) => !prev)}
           className={cn(
             'flex items-center gap-2 w-full px-2 py-2 rounded-lg text-left transition-colors',
             'hover:bg-[#F0EFEC]',
-            orgPickerOpen && 'bg-[#F0EFEC]'
+            workspacePickerOpen && 'bg-[#F0EFEC]'
           )}
-          aria-expanded={orgPickerOpen}
+          aria-expanded={workspacePickerOpen}
           aria-haspopup="listbox"
-          aria-label="Switch organisation"
+          aria-label="Switch workspace"
         >
           <svg
             viewBox="0 0 48 42"
@@ -146,49 +146,49 @@ export default function OpenClawSidebar({
             />
           </svg>
           <span className="text-sm font-semibold text-gray-900 truncate min-w-0">
-            {activeOrg.name}
+            {activeWorkspace.name}
           </span>
           <ChevronDown
             className={cn(
               'h-3.5 w-3.5 text-gray-400 ml-auto shrink-0 transition-transform duration-150',
-              orgPickerOpen && 'rotate-180'
+              workspacePickerOpen && 'rotate-180'
             )}
             aria-hidden="true"
           />
         </button>
 
-        {orgPickerOpen && (
+        {workspacePickerOpen && (
           <div
             className="absolute left-2 right-2 top-full z-50 mt-1 rounded-lg border border-[#EEECEA] bg-white shadow-lg py-1"
             role="listbox"
-            aria-label="Organisations"
+            aria-label="Workspaces"
           >
             <div className="px-3 py-1.5">
               <p className="text-[11px] font-medium text-[#8C8C8C] uppercase tracking-wider">
-                Organisations
+                Workspaces
               </p>
             </div>
-            {STUB_ORGS.map((org) => (
+            {STUB_WORKSPACES.map((workspace) => (
               <button
-                key={org.id}
+                key={workspace.id}
                 type="button"
                 role="option"
-                aria-selected={org.id === activeOrg.id}
+                aria-selected={workspace.id === activeWorkspace.id}
                 onClick={() => {
-                  setActiveOrg(org);
+                  setActiveOrg(workspace);
                   setOrgPickerOpen(false);
                 }}
                 className={cn(
                   'flex items-center gap-2 w-full px-3 py-2 text-sm text-left transition-colors',
                   'hover:bg-[#F5F4F1]',
-                  org.id === activeOrg.id && 'text-gray-900 font-medium'
+                  workspace.id === activeWorkspace.id && 'text-gray-900 font-medium'
                 )}
               >
                 <span className="flex h-5 w-5 items-center justify-center rounded bg-[#F0EFEC] text-[10px] font-semibold text-[#6B6B6B] shrink-0">
-                  {org.name.charAt(0)}
+                  {workspace.name.charAt(0)}
                 </span>
-                <span className="truncate min-w-0">{org.name}</span>
-                {org.id === activeOrg.id && (
+                <span className="truncate min-w-0">{workspace.name}</span>
+                {workspace.id === activeWorkspace.id && (
                   <Check className="h-3.5 w-3.5 text-[#5867EF] ml-auto shrink-0" />
                 )}
               </button>
@@ -200,7 +200,7 @@ export default function OpenClawSidebar({
                 className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[#6B6B6B] hover:bg-[#F5F4F1] hover:text-gray-900 transition-colors"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span>Create organisation</span>
+                <span>Create workspace</span>
               </button>
             </div>
           </div>
