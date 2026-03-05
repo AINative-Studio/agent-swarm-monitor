@@ -246,7 +246,7 @@ export default function OpenClawAgentDetailClient({
         </TabsContent>
 
         <TabsContent value="skills" className="mt-6">
-          <AgentSkillsTab />
+          <AgentSkillsTab agentId={agentId} />
         </TabsContent>
       </Tabs>
 
