@@ -34,6 +34,15 @@ export interface ConversationListResponse {
   offset: number;
 }
 
+export interface Message {
+  id: string;
+  conversationId: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}
+
 export class ConversationError extends Error {
   constructor(
     public statusCode: number,

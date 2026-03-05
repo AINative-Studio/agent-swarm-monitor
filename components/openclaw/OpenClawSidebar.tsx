@@ -32,6 +32,7 @@ const navItems: NavItem[] = [
   { name: 'Templates', href: '/templates', icon: FileText },
   { name: 'Agents', href: '/agents', icon: Bot },
   { name: 'Agent Swarms', href: '/swarms', icon: Network },
+  { name: 'Network Map', href: '/network', icon: Globe },
   { name: 'Integrations', href: '/integrations', icon: Globe },
   { name: 'Channels', href: '/channels', icon: Phone },
   { name: 'Audit Log', href: '/audit-log', icon: Clock },
@@ -46,7 +47,7 @@ interface Workspace {
   slug: string;
 }
 
-const STUB_WORKSPACES: Organization[] = [
+const STUB_WORKSPACES: Workspace[] = [
   { id: 'workspace_1', name: 'AINative Studio', slug: 'ainative-studio' },
   { id: 'workspace_2', name: 'AgentClaw Labs', slug: 'agentclaw-labs' },
   { id: 'workspace_3', name: 'Personal', slug: 'personal' },
@@ -66,7 +67,7 @@ export default function OpenClawSidebar({
   className,
 }: OpenClawSidebarProps) {
   const pathname = usePathname();
-  const [activeWorkspace, setActiveOrg] = useState<Organization>(STUB_WORKSPACES[0]);
+  const [activeWorkspace, setActiveOrg] = useState<Workspace>(STUB_WORKSPACES[0]);
   const [workspacePickerOpen, setOrgPickerOpen] = useState(false);
   const workspacePickerRef = useRef<HTMLDivElement>(null);
 
