@@ -227,7 +227,7 @@ export default function AgentSkillsTab({ agentId }: { agentId: string }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filteredSkills.map((skill) => (
           <div
-            key={skill.name}
+            key={`${skill.name}-${skill.type}-${skill.source}`}
             className={`border rounded-lg p-4 transition-colors ${
               skill.eligible
                 ? 'border-gray-200 bg-white hover:border-gray-300'
