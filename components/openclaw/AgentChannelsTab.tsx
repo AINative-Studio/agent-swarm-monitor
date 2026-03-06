@@ -6,6 +6,7 @@ import ChannelRow from './ChannelRow';
 import { ChannelAuthDialog } from './ChannelAuthDialog';
 import openClawService from '@/lib/openclaw-service';
 import { useToast } from '@/hooks/use-toast';
+import { ApiTimeoutError } from '@/lib/api-client';
 
 interface ChannelCapability {
   channel: string;
@@ -141,12 +142,24 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
       setChannels(Object.values(channelsMap));
     } catch (err: any) {
       console.error('Failed to load channels:', err);
-      setError(err.message || 'Failed to load channels');
-      toast({
-        title: 'Failed to load channels',
-        description: err.message,
-        variant: 'destructive'
-      });
+
+      // Handle timeout errors specifically
+      if (err instanceof ApiTimeoutError) {
+        const message = 'Request timed out. The OpenClaw backend might not be running. Please check if the backend is started on port 8001.';
+        setError(message);
+        toast({
+          title: 'Connection Timeout',
+          description: message,
+          variant: 'destructive'
+        });
+      } else {
+        setError(err.message || 'Failed to load channels');
+        toast({
+          title: 'Failed to load channels',
+          description: err.message,
+          variant: 'destructive'
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -176,11 +189,21 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
       });
     } catch (err: any) {
       console.error(`Failed to get auth instructions for ${channel.name}:`, err);
-      toast({
-        title: `Failed to connect ${channel.name}`,
-        description: err.message,
-        variant: 'destructive'
-      });
+
+      // Handle timeout errors specifically
+      if (err instanceof ApiTimeoutError) {
+        toast({
+          title: 'Connection Timeout',
+          description: 'Request timed out. Please check if the OpenClaw backend is running on port 8001.',
+          variant: 'destructive'
+        });
+      } else {
+        toast({
+          title: `Failed to connect ${channel.name}`,
+          description: err.message,
+          variant: 'destructive'
+        });
+      }
     }
   };
 

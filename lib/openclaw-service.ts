@@ -82,7 +82,8 @@ class OpenClawService {
 
     // Channel Management
     async getAvailableChannels(): Promise<any> {
-        return apiClient.get('/openclaw/channels/available');
+        // Use longer timeout - this command can take 15-20 seconds
+        return apiClient.get('/openclaw/channels/available', undefined, 45000);
     }
 
     async getConfiguredChannels(): Promise<any> {
@@ -124,7 +125,8 @@ class OpenClawService {
         account_id?: string;
         verbose?: boolean;
     }): Promise<any> {
-        return apiClient.post('/openclaw/channels/login', data);
+        // Use longer timeout for login (QR code generation, etc.)
+        return apiClient.post('/openclaw/channels/login', data, 60000);
     }
 
     async logoutChannel(channel: string, accountId: string = 'default'): Promise<any> {

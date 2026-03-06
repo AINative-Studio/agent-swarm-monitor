@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import openClawService from '@/lib/openclaw-service';
 import { useToast } from '@/hooks/use-toast';
+import { ApiTimeoutError } from '@/lib/api-client';
 
 interface ChannelAuthDialogProps {
   open: boolean;
@@ -67,11 +68,19 @@ export function ChannelAuthDialog({
       onSuccess();
       onOpenChange(false);
     } catch (err: any) {
-      toast({
-        title: 'Connection failed',
-        description: err.message || 'Failed to connect channel',
-        variant: 'destructive',
-      });
+      if (err instanceof ApiTimeoutError) {
+        toast({
+          title: 'Connection Timeout',
+          description: 'Request timed out. Please check if the OpenClaw backend is running.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Connection failed',
+          description: err.message || 'Failed to connect channel',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -104,11 +113,19 @@ export function ChannelAuthDialog({
       onSuccess();
       onOpenChange(false);
     } catch (err: any) {
-      toast({
-        title: 'Connection failed',
-        description: err.message || 'Failed to connect Slack',
-        variant: 'destructive',
-      });
+      if (err instanceof ApiTimeoutError) {
+        toast({
+          title: 'Connection Timeout',
+          description: 'Request timed out. Please check if the OpenClaw backend is running.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Connection failed',
+          description: err.message || 'Failed to connect Slack',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -136,11 +153,19 @@ export function ChannelAuthDialog({
         onOpenChange(false);
       }
     } catch (err: any) {
-      toast({
-        title: 'Connection failed',
-        description: err.message || 'Failed to generate QR code',
-        variant: 'destructive',
-      });
+      if (err instanceof ApiTimeoutError) {
+        toast({
+          title: 'Connection Timeout',
+          description: 'Request timed out. This may take up to 60 seconds. Please check if the OpenClaw backend is running.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Connection failed',
+          description: err.message || 'Failed to generate QR code',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setLoading(false);
     }
