@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Wand2, Check, AlertCircle, ExternalLink, Loader2, Settings, Download } from 'lucide-react';
 import openClawService from '@/lib/openclaw-service';
 import SkillConfigureModal from './SkillConfigureModal';
@@ -41,47 +41,47 @@ export default function AgentSkillsTab({ agentId }: { agentId: string }) {
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadSkills() {
-      try {
-        setIsLoading(true);
-        const data = await openClawService.getSkills();
+  const loadSkills = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await openClawService.getSkills();
 
-        // Fetch installation status for each CLI skill that can be installed
-        const skillsWithStatus = await Promise.all(
-          data.skills.map(async (skill: Skill) => {
-            // Only check installation status for CLI skills that need installation
-            if (skill.type === 'cli' && (skill.missing?.bins || skill.missing?.anyBins)) {
-              try {
-                const status = await openClawService.getSkillInstallationStatus(skill.name);
-                return {
-                  ...skill,
-                  isInstalled: status.is_installed,
-                  binaryPath: status.binary_path,
-                };
-              } catch (err) {
-                // If skill is not in installable registry, just return as-is
-                return skill;
-              }
+      // Fetch installation status for each CLI skill that can be installed
+      const skillsWithStatus = await Promise.all(
+        data.skills.map(async (skill: Skill) => {
+          // Only check installation status for CLI skills that need installation
+          if (skill.type === 'cli' && (skill.missing?.bins || skill.missing?.anyBins)) {
+            try {
+              const status = await openClawService.getSkillInstallationStatus(skill.name);
+              return {
+                ...skill,
+                isInstalled: status.is_installed,
+                binaryPath: status.binary_path,
+              };
+            } catch (err) {
+              // If skill is not in installable registry, just return as-is
+              return skill;
             }
-            return skill;
-          })
-        );
+          }
+          return skill;
+        })
+      );
 
-        setSkillsData({
-          ...data,
-          skills: skillsWithStatus,
-        });
-      } catch (err) {
-        console.error('Failed to load skills:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load skills');
-      } finally {
-        setIsLoading(false);
-      }
+      setSkillsData({
+        ...data,
+        skills: skillsWithStatus,
+      });
+    } catch (err) {
+      console.error('Failed to load skills:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load skills');
+    } finally {
+      setIsLoading(false);
     }
-
-    loadSkills();
   }, []);
+
+  useEffect(() => {
+    loadSkills();
+  }, [loadSkills]);
 
   const getFilteredSkills = () => {
     if (!skillsData) return [];
@@ -127,23 +127,13 @@ export default function AgentSkillsTab({ agentId }: { agentId: string }) {
   };
 
   const handleConfigureSuccess = async () => {
-    // Reload skills after successful configuration
-    try {
-      const data = await openClawService.getSkills();
-      setSkillsData(data);
-    } catch (err) {
-      console.error('Failed to reload skills:', err);
-    }
+    // Reload skills with updated installation status
+    await loadSkills();
   };
 
   const handleInstallSuccess = async () => {
-    // Reload skills after successful installation
-    try {
-      const data = await openClawService.getSkills();
-      setSkillsData(data);
-    } catch (err) {
-      console.error('Failed to reload skills:', err);
-    }
+    // Reload skills with updated installation status
+    await loadSkills();
   };
 
   const filteredSkills = getFilteredSkills();
