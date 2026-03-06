@@ -51,7 +51,7 @@ class ApiClient {
     private baseUrl: string;
 
     constructor() {
-        this.baseUrl = '/api/v1';
+        this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
     }
 
     private buildUrl(path: string, params?: Record<string, string>): string {

@@ -59,6 +59,26 @@ class OpenClawService {
     async sendMessage(agentId: string, data: { message: string }): Promise<any> {
         return apiClient.post(`${this.basePath}/${agentId}/message`, data);
     }
+
+    async getSkills(): Promise<any> {
+        return apiClient.get('/skills');
+    }
+
+    async configureSkill(
+        agentId: string,
+        skillName: string,
+        data: { api_key: string; enabled: boolean }
+    ): Promise<any> {
+        return apiClient.post(`${this.basePath}/${agentId}/skills/${skillName}/configure`, data);
+    }
+
+    async installSkill(skillName: string): Promise<any> {
+        return apiClient.post(`/skills/${skillName}/install`);
+    }
+
+    async getSkillInstallationStatus(skillName: string): Promise<any> {
+        return apiClient.get(`/skills/${skillName}/installation-status`);
+    }
 }
 
 const openClawService = new OpenClawService();
