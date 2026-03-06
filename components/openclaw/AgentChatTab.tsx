@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { MessageSquare, Send } from 'lucide-react';
+import { MessageSquare, Send, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { OpenClawAgent } from '@/types/openclaw';
 
@@ -19,7 +19,66 @@ interface ChatMessage {
 export default function AgentChatTab({ agent }: AgentChatTabProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const replyTimeoutRef = useRef<NodeJS.Timeout>();
+
+  // Fetch existing conversation and messages
+  useEffect(() => {
+    const fetchMessages = async () => {
+      try {
+        setIsLoading(true);
+
+        // First, get conversations for this agent
+        const convResponse = await fetch(
+          `http://localhost:8000/api/v1/conversations?agent_id=${agent.id}`
+        );
+
+        if (!convResponse.ok) {
+          console.error('Failed to fetch conversations');
+          return;
+        }
+
+        const convData = await convResponse.json();
+
+        if (convData.conversations && convData.conversations.length > 0) {
+          const conversation = convData.conversations[0]; // Get most recent
+          setConversationId(conversation.id);
+
+          // Fetch messages for this conversation
+          const msgResponse = await fetch(
+            `http://localhost:8000/api/v1/conversations/${conversation.id}/messages?limit=100`
+          );
+
+          if (!msgResponse.ok) {
+            console.error('Failed to fetch messages');
+            return;
+          }
+
+          const msgData = await msgResponse.json();
+
+          if (msgData.messages) {
+            // Transform messages to match our interface
+            const transformedMessages = msgData.messages.map((msg: any, idx: number) => ({
+              id: `msg-${msg.timestamp}-${idx}`,
+              role: msg.role,
+              content: msg.content,
+              timestamp: msg.timestamp,
+            }));
+
+            setMessages(transformedMessages);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching messages:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchMessages();
+  }, [agent.id]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -74,7 +133,12 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
-        {messages.length === 0 ? (
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center h-full">
+            <Loader2 className="h-8 w-8 text-gray-400 animate-spin mb-3" />
+            <p className="text-sm text-gray-500">Loading conversation...</p>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
             <div className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 mb-4">
               <MessageSquare className="h-6 w-6 text-gray-400" />

@@ -55,8 +55,8 @@ export default function AgentSkillsTab({ agentId }: { agentId: string }) {
               const status = await openClawService.getSkillInstallationStatus(skill.name);
               return {
                 ...skill,
-                isInstalled: status.is_installed,
-                binaryPath: status.binary_path,
+                isInstalled: status.isInstalled,
+                binaryPath: status.binaryPath,
               };
             } catch (err) {
               // If skill is not in installable registry, just return as-is
