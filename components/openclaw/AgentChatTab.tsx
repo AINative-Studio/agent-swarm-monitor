@@ -89,7 +89,7 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
     };
   }, []);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed) return;
 
@@ -102,18 +102,46 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
 
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
+    setIsSending(true);
 
-    // Simulate agent response after a short delay
-    replyTimeoutRef.current = setTimeout(() => {
+    try {
+      // Send message to backend API (endpoint from agent_lifecycle.py)
+      const response = await fetch(`${API_URL}/agents/${agent.id}/message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: trimmed }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      }
+
+      const data = await response.json();
+
+      // Add assistant response
       const assistantMessage: ChatMessage = {
-        id: `msg-${Date.now()}-reply`,
+        id: data.message_id || `msg-${Date.now()}-reply`,
         role: 'assistant',
-        content: `This is a simulated response from ${agent.name}. In production, this would connect to the OpenClaw agent API.`,
+        content: data.response || 'No response received',
         timestamp: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
-    }, 1000);
-  }, [input, agent.name]);
+    } catch (error) {
+      console.error('Error sending message:', error);
+      // Show error message in chat
+      const errorMessage: ChatMessage = {
+        id: `msg-${Date.now()}-error`,
+        role: 'assistant',
+        content: `Error: ${error instanceof Error ? error.message : 'Failed to send message'}`,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsSending(false);
+    }
+  }, [input, agent.id]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -196,16 +224,20 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
           <button
             type="button"
             onClick={handleSend}
-            disabled={!input.trim()}
+            disabled={!input.trim() || isSending}
             className={cn(
               'flex items-center justify-center w-10 h-10 rounded-lg transition-colors shrink-0',
-              input.trim()
+              input.trim() && !isSending
                 ? 'bg-blue-600 text-white hover:bg-blue-700'
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             )}
             aria-label="Send message"
           >
-            <Send className="h-4 w-4" />
+            {isSending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
           </button>
         </div>
       </div>
