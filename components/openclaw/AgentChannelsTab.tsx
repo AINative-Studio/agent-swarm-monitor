@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import ChannelRow from './ChannelRow';
+import { ChannelAuthDialog } from './ChannelAuthDialog';
 import openClawService from '@/lib/openclaw-service';
 import { useToast } from '@/hooks/use-toast';
 
@@ -42,6 +43,19 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authDialog, setAuthDialog] = useState<{
+    open: boolean;
+    channelId: string;
+    channelName: string;
+    authType: string;
+    instructions: string[];
+  }>({
+    open: false,
+    channelId: '',
+    channelName: '',
+    authType: '',
+    instructions: [],
+  });
 
   useEffect(() => {
     loadChannels();
@@ -152,57 +166,26 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
       // Get authentication instructions
       const instructions = await openClawService.getChannelAuthInstructions(channel.id);
 
-      // For now, show instructions in console and toast
-      console.log(`[${channel.name}] Authentication instructions:`, instructions);
-
-      if (instructions.auth_type === 'qr_code') {
-        // WhatsApp QR code flow
-        toast({
-          title: `Opening QR code for ${channel.name}`,
-          description: 'Scan the QR code with your phone'
-        });
-        const loginResult = await openClawService.loginChannel({
-          channel: channel.id,
-          verbose: true,
-        });
-        console.log('Login result:', loginResult);
-
-        if (loginResult.success) {
-          toast({
-            title: `${channel.name} connected successfully!`
-          });
-          loadChannels(); // Reload to update status
-        }
-      } else if (instructions.auth_type === 'bot_token') {
-        // Show token input dialog
-        toast({
-          title: `Connect ${channel.name}`,
-          description: instructions.instructions.slice(0, 2).join('. ')
-        });
-
-        // TODO: Show modal with token input form
-        // For now, just log instructions
-        console.log(`${channel.name} setup instructions:`, instructions.instructions);
-      } else if (instructions.auth_type === 'oauth') {
-        // Slack OAuth flow
-        toast({
-          title: `Connect ${channel.name}`,
-          description: instructions.instructions.slice(0, 2).join('. ')
-        });
-      } else {
-        toast({
-          title: `${channel.name} setup`,
-          description: instructions.instructions.slice(0, 2).join('. ')
-        });
-      }
+      // Open authentication dialog
+      setAuthDialog({
+        open: true,
+        channelId: channel.id,
+        channelName: channel.name,
+        authType: instructions.auth_type,
+        instructions: instructions.instructions,
+      });
     } catch (err: any) {
-      console.error(`Failed to connect ${channel.name}:`, err);
+      console.error(`Failed to get auth instructions for ${channel.name}:`, err);
       toast({
         title: `Failed to connect ${channel.name}`,
         description: err.message,
         variant: 'destructive'
       });
     }
+  };
+
+  const handleAuthSuccess = () => {
+    loadChannels(); // Reload to update status
   };
 
   if (loading) {
@@ -281,6 +264,17 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
           💡 Channels are managed system-wide in OpenClaw. Connected channels can be used by all agents.
         </p>
       </div>
+
+      {/* Authentication Dialog */}
+      <ChannelAuthDialog
+        open={authDialog.open}
+        onOpenChange={(open) => setAuthDialog({ ...authDialog, open })}
+        channelId={authDialog.channelId}
+        channelName={authDialog.channelName}
+        authType={authDialog.authType}
+        instructions={authDialog.instructions}
+        onSuccess={handleAuthSuccess}
+      />
     </div>
   );
 }
