@@ -79,6 +79,61 @@ class OpenClawService {
     async getSkillInstallationStatus(skillName: string): Promise<any> {
         return apiClient.get(`/skills/${skillName}/installation-status`);
     }
+
+    // Channel Management
+    async getAvailableChannels(): Promise<any> {
+        return apiClient.get('/openclaw/channels/available');
+    }
+
+    async getConfiguredChannels(): Promise<any> {
+        return apiClient.get('/openclaw/channels/configured');
+    }
+
+    async getAgentChannels(agentId: string): Promise<any> {
+        return apiClient.get(`/openclaw/channels/agents/${agentId}/channels`);
+    }
+
+    async getChannelStatus(channel: string, accountId: string = 'default'): Promise<any> {
+        return apiClient.get(`/openclaw/channels/${channel}/status`, { account_id: accountId });
+    }
+
+    async getChannelAuthInstructions(channel: string): Promise<any> {
+        return apiClient.get(`/openclaw/channels/${channel}/auth-instructions`);
+    }
+
+    async addChannelBotToken(data: {
+        channel: string;
+        token: string;
+        account_id?: string;
+        name?: string;
+    }): Promise<any> {
+        return apiClient.post('/openclaw/channels/add/bot-token', data);
+    }
+
+    async addChannelSlack(data: {
+        bot_token: string;
+        app_token: string;
+        account_id?: string;
+        name?: string;
+    }): Promise<any> {
+        return apiClient.post('/openclaw/channels/add/slack', data);
+    }
+
+    async loginChannel(data: {
+        channel: string;
+        account_id?: string;
+        verbose?: boolean;
+    }): Promise<any> {
+        return apiClient.post('/openclaw/channels/login', data);
+    }
+
+    async logoutChannel(channel: string, accountId: string = 'default'): Promise<any> {
+        return apiClient.post('/openclaw/channels/logout', null, { channel, account_id: accountId });
+    }
+
+    async removeChannel(channel: string, accountId: string = 'default'): Promise<any> {
+        return apiClient.delete('/openclaw/channels/remove', { channel, account_id: accountId });
+    }
 }
 
 const openClawService = new OpenClawService();
