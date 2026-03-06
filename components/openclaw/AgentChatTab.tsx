@@ -5,6 +5,8 @@ import { MessageSquare, Send, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { OpenClawAgent } from '@/types/openclaw';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api/v1';
+
 interface AgentChatTabProps {
   agent: OpenClawAgent;
 }
@@ -32,7 +34,7 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
 
         // First, get conversations for this agent
         const convResponse = await fetch(
-          `http://localhost:8000/api/v1/conversations?agent_id=${agent.id}`
+          `${API_URL}/conversations?agent_id=${agent.id}`
         );
 
         if (!convResponse.ok) {
@@ -48,7 +50,7 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
 
           // Fetch messages for this conversation
           const msgResponse = await fetch(
-            `http://localhost:8000/api/v1/conversations/${conversation.id}/messages?limit=100`
+            `${API_URL}/conversations/${conversation.id}/messages?limit=100`
           );
 
           if (!msgResponse.ok) {
