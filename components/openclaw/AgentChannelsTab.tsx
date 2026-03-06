@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import ChannelRow from './ChannelRow';
 import openClawService from '@/lib/openclaw-service';
-import { toast } from 'sonner';
+import { useToast } from '@/hooks/use-toast';
 
 interface ChannelCapability {
   channel: string;
@@ -38,6 +38,7 @@ interface Channel {
 }
 
 export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
+  const { toast } = useToast();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -127,7 +128,11 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
     } catch (err: any) {
       console.error('Failed to load channels:', err);
       setError(err.message || 'Failed to load channels');
-      toast.error('Failed to load channels');
+      toast({
+        title: 'Failed to load channels',
+        description: err.message,
+        variant: 'destructive'
+      });
     } finally {
       setLoading(false);
     }
@@ -137,7 +142,10 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
     try {
       if (channel.connected) {
         // Show manage/disconnect options
-        toast.info(`Managing ${channel.name} - Disconnect functionality coming soon`);
+        toast({
+          title: `Managing ${channel.name}`,
+          description: 'Disconnect functionality coming soon'
+        });
         return;
       }
 
@@ -149,7 +157,10 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
 
       if (instructions.auth_type === 'qr_code') {
         // WhatsApp QR code flow
-        toast.info(`Opening QR code for ${channel.name}...`);
+        toast({
+          title: `Opening QR code for ${channel.name}`,
+          description: 'Scan the QR code with your phone'
+        });
         const loginResult = await openClawService.loginChannel({
           channel: channel.id,
           verbose: true,
@@ -157,34 +168,40 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
         console.log('Login result:', loginResult);
 
         if (loginResult.success) {
-          toast.success(`${channel.name} connected successfully!`);
+          toast({
+            title: `${channel.name} connected successfully!`
+          });
           loadChannels(); // Reload to update status
         }
       } else if (instructions.auth_type === 'bot_token') {
         // Show token input dialog
-        toast.info(
-          `To connect ${channel.name}:\n${instructions.instructions.join('\n')}`,
-          { duration: 10000 }
-        );
+        toast({
+          title: `Connect ${channel.name}`,
+          description: instructions.instructions.slice(0, 2).join('. ')
+        });
 
         // TODO: Show modal with token input form
         // For now, just log instructions
         console.log(`${channel.name} setup instructions:`, instructions.instructions);
       } else if (instructions.auth_type === 'oauth') {
         // Slack OAuth flow
-        toast.info(
-          `To connect ${channel.name}:\n${instructions.instructions.join('\n')}`,
-          { duration: 10000 }
-        );
+        toast({
+          title: `Connect ${channel.name}`,
+          description: instructions.instructions.slice(0, 2).join('. ')
+        });
       } else {
-        toast.info(
-          `${channel.name} authentication instructions:\n${instructions.instructions.join('\n')}`,
-          { duration: 10000 }
-        );
+        toast({
+          title: `${channel.name} setup`,
+          description: instructions.instructions.slice(0, 2).join('. ')
+        });
       }
     } catch (err: any) {
       console.error(`Failed to connect ${channel.name}:`, err);
-      toast.error(`Failed to connect ${channel.name}: ${err.message}`);
+      toast({
+        title: `Failed to connect ${channel.name}`,
+        description: err.message,
+        variant: 'destructive'
+      });
     }
   };
 
