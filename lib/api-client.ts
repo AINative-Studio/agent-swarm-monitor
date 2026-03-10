@@ -47,11 +47,46 @@ export class ApiError extends Error {
     }
 }
 
+export class ApiTimeoutError extends Error {
+    constructor(
+        public url: string,
+        public timeoutMs: number,
+    ) {
+        super(`Request to ${url} timed out after ${timeoutMs}ms`);
+        this.name = 'ApiTimeoutError';
+    }
+}
+
 class ApiClient {
     private baseUrl: string;
+    private defaultTimeout: number = 30000; // 30 seconds
 
     constructor() {
-        this.baseUrl = '/api/v1';
+        this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+    }
+
+    private async fetchWithTimeout(
+        url: string,
+        options: RequestInit,
+        timeoutMs: number = this.defaultTimeout
+    ): Promise<Response> {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            return response;
+        } catch (error) {
+            clearTimeout(timeoutId);
+            if (error instanceof Error && error.name === 'AbortError') {
+                throw new ApiTimeoutError(url, timeoutMs);
+            }
+            throw error;
+        }
     }
 
     private buildUrl(path: string, params?: Record<string, string>): string {
@@ -88,51 +123,71 @@ class ApiClient {
         return snakeToCamelKeys<T>(data);
     }
 
-    async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+    async get<T>(path: string, params?: Record<string, string>, timeoutMs?: number): Promise<T> {
         const url = this.buildUrl(path, params);
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-        });
+        const response = await this.fetchWithTimeout(
+            url,
+            {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            },
+            timeoutMs
+        );
         return this.handleResponse<T>(response);
     }
 
-    async post<T>(path: string, body?: unknown): Promise<T> {
+    async post<T>(path: string, body?: unknown, timeoutMs?: number): Promise<T> {
         const url = this.buildUrl(path);
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: body ? JSON.stringify(camelToSnakeKeys(body)) : undefined,
-        });
+        const response = await this.fetchWithTimeout(
+            url,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: body ? JSON.stringify(camelToSnakeKeys(body)) : undefined,
+            },
+            timeoutMs
+        );
         return this.handleResponse<T>(response);
     }
 
-    async put<T>(path: string, body: unknown): Promise<T> {
+    async put<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
         const url = this.buildUrl(path);
-        const response = await fetch(url, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(camelToSnakeKeys(body)),
-        });
+        const response = await this.fetchWithTimeout(
+            url,
+            {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(camelToSnakeKeys(body)),
+            },
+            timeoutMs
+        );
         return this.handleResponse<T>(response);
     }
 
-    async patch<T>(path: string, body: unknown): Promise<T> {
+    async patch<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
         const url = this.buildUrl(path);
-        const response = await fetch(url, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(camelToSnakeKeys(body)),
-        });
+        const response = await this.fetchWithTimeout(
+            url,
+            {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(camelToSnakeKeys(body)),
+            },
+            timeoutMs
+        );
         return this.handleResponse<T>(response);
     }
 
-    async delete(path: string): Promise<void> {
+    async delete(path: string, timeoutMs?: number): Promise<void> {
         const url = this.buildUrl(path);
-        const response = await fetch(url, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-        });
+        const response = await this.fetchWithTimeout(
+            url,
+            {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+            },
+            timeoutMs
+        );
         await this.handleResponse<void>(response);
     }
 }
