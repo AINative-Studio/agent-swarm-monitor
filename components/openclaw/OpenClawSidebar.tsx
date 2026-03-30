@@ -18,8 +18,10 @@ import {
   ChevronDown,
   Check,
   Plus,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/components/providers/auth-provider';
 
 interface NavItem {
   name: string;
@@ -60,12 +62,16 @@ interface OpenClawSidebarProps {
 }
 
 export default function OpenClawSidebar({
-  userName = 'Toby Morning',
-  userEmail = 'toby@ainative.studio',
-  userInitials = 'TM',
+  userName: propUserName,
+  userEmail: propUserEmail,
+  userInitials: propUserInitials,
   className,
 }: OpenClawSidebarProps) {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
+  const userName = user?.fullName || propUserName || 'User';
+  const userEmail = user?.email || propUserEmail || '';
+  const userInitials = propUserInitials || userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
   const [activeOrg, setActiveOrg] = useState<Organization>(STUB_ORGS[0]);
   const [orgPickerOpen, setOrgPickerOpen] = useState(false);
   const orgPickerRef = useRef<HTMLDivElement>(null);
@@ -251,10 +257,18 @@ export default function OpenClawSidebar({
           >
             {userInitials}
           </div>
-          <div className="min-w-0">
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-900 truncate">{userName}</p>
             <p className="text-xs text-[#8C8C8C] truncate">{userEmail}</p>
           </div>
+          <button
+            onClick={logout}
+            className="p-1.5 text-[#8C8C8C] hover:text-gray-900 hover:bg-[#F0EFEC] rounded-md transition-colors"
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </aside>
