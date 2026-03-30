@@ -42,7 +42,7 @@ export default function TasksClient() {
     };
 
     const totalPages = queueData
-        ? Math.ceil(queueData.totalCount / (filters.limit || 50))
+        ? Math.ceil((queueData.totalCount ?? queueData.total ?? 0) / (filters.limit || 50))
         : 0;
     const currentPage = Math.floor((filters.offset || 0) / (filters.limit || 50)) + 1;
 
