@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import QueryProvider from '@/components/providers/query-provider';
+import AuthProvider from '@/components/providers/auth-provider';
 import OpenClawLayoutShell from './OpenClawLayoutShell';
 import { Toaster } from '@/components/ui/toaster';
 
@@ -21,8 +22,10 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <QueryProvider>
-          <OpenClawLayoutShell>{children}</OpenClawLayoutShell>
-          <Toaster />
+          <AuthProvider>
+            <OpenClawLayoutShell>{children}</OpenClawLayoutShell>
+            <Toaster />
+          </AuthProvider>
         </QueryProvider>
       </body>
     </html>

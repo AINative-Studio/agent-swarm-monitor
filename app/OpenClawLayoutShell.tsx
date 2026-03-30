@@ -30,6 +30,12 @@ export default function OpenClawLayoutShell({ children }: OpenClawLayoutShellPro
     }
   }, [pathname, isMobile]);
 
+  const isLoginPage = pathname === '/login';
+
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="flex min-h-screen bg-white">
       {/* Desktop Sidebar */}
