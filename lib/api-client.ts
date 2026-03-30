@@ -60,9 +60,18 @@ export class ApiTimeoutError extends Error {
 class ApiClient {
     private baseUrl: string;
     private defaultTimeout: number = 30000; // 30 seconds
+    private token: string | null = null;
 
     constructor() {
         this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+    }
+
+    setToken(token: string | null) {
+        this.token = token;
+    }
+
+    private get authHeaders(): Record<string, string> {
+        return this.token ? { Authorization: `Bearer ${this.token}` } : {};
     }
 
     private async fetchWithTimeout(
@@ -129,7 +138,7 @@ class ApiClient {
             url,
             {
                 method: 'GET',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
             },
             timeoutMs
         );
@@ -142,7 +151,7 @@ class ApiClient {
             url,
             {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
                 body: body ? JSON.stringify(camelToSnakeKeys(body)) : undefined,
             },
             timeoutMs
@@ -156,7 +165,7 @@ class ApiClient {
             url,
             {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
                 body: JSON.stringify(camelToSnakeKeys(body)),
             },
             timeoutMs
@@ -170,7 +179,7 @@ class ApiClient {
             url,
             {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
                 body: JSON.stringify(camelToSnakeKeys(body)),
             },
             timeoutMs
@@ -184,11 +193,25 @@ class ApiClient {
             url,
             {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
             },
             timeoutMs
         );
         await this.handleResponse<void>(response);
+    }
+
+    async deleteWithBody<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
+        const url = this.buildUrl(path);
+        const response = await this.fetchWithTimeout(
+            url,
+            {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
+                body: JSON.stringify(camelToSnakeKeys(body)),
+            },
+            timeoutMs
+        );
+        return this.handleResponse<T>(response);
     }
 }
 

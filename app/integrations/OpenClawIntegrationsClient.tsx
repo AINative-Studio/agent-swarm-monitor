@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAgentList } from '@/hooks/useOpenClawAgents';
+// Static data — no backend endpoint for integrations yet (Gmail/LinkedIn are coming soon features)
 import { MOCK_INTEGRATIONS } from '@/lib/openclaw-mock-data';
 import { fadeUp } from '@/lib/openclaw-utils';
 import AgentPicker from '@/components/openclaw/AgentPicker';

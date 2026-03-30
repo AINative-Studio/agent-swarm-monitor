@@ -130,11 +130,11 @@ class OpenClawService {
     }
 
     async logoutChannel(channel: string, accountId: string = 'default'): Promise<any> {
-        return apiClient.post('/openclaw/channels/logout', null, { channel, account_id: accountId });
+        return apiClient.post('/openclaw/channels/logout', { channel, accountId });
     }
 
     async removeChannel(channel: string, accountId: string = 'default'): Promise<any> {
-        return apiClient.delete('/openclaw/channels/remove', { channel, account_id: accountId });
+        return apiClient.deleteWithBody('/openclaw/channels/remove', { channel, accountId });
     }
 }
 

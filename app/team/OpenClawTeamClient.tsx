@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { UserPlus, Crown, Pencil, Eye, Circle } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { UserPlus, Crown, Pencil, Eye, Circle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MOCK_TEAM_MEMBERS } from '@/lib/openclaw-mock-data';
+import teamService from '@/lib/team-service';
 import type { TeamMember } from '@/types/openclaw';
 
 const fadeUp = {
@@ -85,14 +86,37 @@ function MemberRow({ member }: MemberRowProps) {
   );
 }
 
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
 export default function OpenClawTeamClient() {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('viewer');
-  const [members] = useState<TeamMember[]>(MOCK_TEAM_MEMBERS);
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['team-members'],
+    queryFn: () => teamService.listMembers(),
+    refetchInterval: 30000,
+  });
+
+  const members: TeamMember[] = (data?.members ?? []).map((m) => ({
+    ...m,
+    avatarInitials: m.avatarInitials || getInitials(m.name),
+  }));
+
+  const inviteMutation = useMutation({
+    mutationFn: (vars: { email: string; name: string; role: string }) =>
+      teamService.inviteMember(vars),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['team-members'] }),
+  });
 
   const handleAddMember = () => {
     if (!email.trim()) return;
-    // In production, this would call an API to add the member
+    inviteMutation.mutate({ email: email.trim(), name: email.split('@')[0], role });
     setEmail('');
   };
 
@@ -168,11 +192,15 @@ export default function OpenClawTeamClient() {
       >
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">
-            Members ({members.length})
+            Members {isLoading ? '' : `(${members.length})`}
           </h2>
         </div>
         <div className="px-5 divide-y divide-gray-100">
-          {members.map((member) => (
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+            </div>
+          ) : members.map((member) => (
             <MemberRow key={member.id} member={member} />
           ))}
         </div>

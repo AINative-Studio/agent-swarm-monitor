@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+// Static provider list — these are well-known LLM providers, not dynamic backend data
 import { MOCK_API_KEY_PROVIDERS } from '@/lib/openclaw-mock-data';
 import { fadeUp } from '@/lib/openclaw-utils';
 

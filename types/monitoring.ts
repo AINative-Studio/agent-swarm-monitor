@@ -82,3 +82,24 @@ export interface MonitoringStatus {
     timelineEventCount: number;
     bootstrapped: boolean;
 }
+
+export interface PrometheusMetricsSnapshot {
+    taskAssignmentTotal: number;
+    taskAssignmentRejectedTotal: number;
+    taskResultSubmittedTotal: number;
+    taskResultDuplicateTotal: number;
+    taskResultInvalidTotal: number;
+    taskRequeuedTotal: number;
+    leaseIssuedTotal: number;
+    leaseExpiredTotal: number;
+    leaseRevokedTotal: number;
+    activeLeasesCount: number;
+    nodeCrashDetectedTotal: number;
+    partitionDetectedTotal: number;
+    recoveryTriggeredTotal: number;
+    bufferSize: number;
+    bufferUtilizationPercent: number;
+    partitionDegraded: number;
+    recoveryDurationSeconds: number;
+    buildInfo: { version: string; commit: string } | null;
+}
