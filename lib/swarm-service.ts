@@ -42,22 +42,10 @@ class SwarmService {
     }
 
     async removeAgents(swarmId: string, agentIds: string[]): Promise<AgentSwarm> {
-        const response = await fetch(`/api/v1${this.basePath}/${swarmId}/agents`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agent_ids: agentIds }),
-        });
-        if (!response.ok) {
-            let detail = `HTTP ${response.status}`;
-            try {
-                const body = await response.json();
-                detail = body.detail || detail;
-            } catch { /* use default */ }
-            throw new Error(detail);
-        }
-        const data = await response.json();
-        const { snakeToCamelKeys } = await import('./api-client');
-        return snakeToCamelKeys<AgentSwarm>(data);
+        return apiClient.deleteWithBody<AgentSwarm>(
+            `${this.basePath}/${swarmId}/agents`,
+            { agentIds }
+        );
     }
 
     async startSwarm(swarmId: string): Promise<AgentSwarm> {

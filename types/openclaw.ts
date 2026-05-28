@@ -142,6 +142,23 @@ export interface ApiKeyProvider {
   configured: boolean;
 }
 
+export interface TeamMemberListResponse {
+  members: TeamMember[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface InviteTeamMemberRequest {
+  email: string;
+  name: string;
+  role: string;
+}
+
+export interface UpdateMemberRoleRequest {
+  role: string;
+}
+
 export type SwarmStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'failed';
 export type CoordinationStrategy = 'parallel' | 'sequential' | 'hierarchical';
 

@@ -52,12 +52,12 @@ export default function TaskStatsChart({ stats, isLoading }: TaskStatsChartProps
         );
     }
 
-    const statusData = Object.entries(stats.tasksByStatus).map(([status, count]) => ({
+    const statusData = Object.entries(stats?.tasksByStatus ?? {}).map(([status, count]) => ({
         name: status,
         value: count,
     }));
 
-    const timeSeriesData = stats.queueDepthTimeSeries.map((point) => ({
+    const timeSeriesData = (stats?.queueDepthTimeSeries ?? []).map((point) => ({
         time: new Date(point.timestamp).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
@@ -126,7 +126,7 @@ export default function TaskStatsChart({ stats, isLoading }: TaskStatsChartProps
                 <div className="rounded-lg border border-[#E8E6E1] p-5 bg-white">
                     <h3 className="text-sm font-semibold text-gray-900 mb-4">Tasks by Priority</h3>
                     <ResponsiveContainer width="100%" height={250}>
-                        <BarChart data={stats.tasksByPriority}>
+                        <BarChart data={stats.tasksByPriority ?? []}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#E8E6E1" />
                             <XAxis dataKey="priority" tick={{ fontSize: 12 }} stroke="#6B7280" />
                             <YAxis tick={{ fontSize: 12 }} stroke="#6B7280" />
@@ -138,7 +138,7 @@ export default function TaskStatsChart({ stats, isLoading }: TaskStatsChartProps
                                 }}
                             />
                             <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                                {stats.tasksByPriority.map((entry) => (
+                                {(stats.tasksByPriority ?? []).map((entry) => (
                                     <Cell
                                         key={entry.priority}
                                         fill={PRIORITY_COLORS[entry.priority]}
@@ -149,11 +149,11 @@ export default function TaskStatsChart({ stats, isLoading }: TaskStatsChartProps
                     </ResponsiveContainer>
                 </div>
 
-                {stats.tasksByType.length > 0 && (
+                {(stats.tasksByType ?? []).length > 0 && (
                     <div className="rounded-lg border border-[#E8E6E1] p-5 bg-white md:col-span-2">
                         <h3 className="text-sm font-semibold text-gray-900 mb-4">Tasks by Type</h3>
                         <ResponsiveContainer width="100%" height={250}>
-                            <BarChart data={stats.tasksByType}>
+                            <BarChart data={stats.tasksByType ?? []}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E6E1" />
                                 <XAxis dataKey="taskType" tick={{ fontSize: 12 }} stroke="#6B7280" />
                                 <YAxis tick={{ fontSize: 12 }} stroke="#6B7280" />
@@ -176,14 +176,14 @@ export default function TaskStatsChart({ stats, isLoading }: TaskStatsChartProps
                     <div className="text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">
                         Total Tasks
                     </div>
-                    <div className="text-2xl font-bold text-gray-900">{stats.totalTasks}</div>
+                    <div className="text-2xl font-bold text-gray-900">{stats.totalTasks ?? 0}</div>
                 </div>
                 <div className="rounded-lg border border-[#E8E6E1] p-4 bg-white">
                     <div className="text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">
                         Success Rate
                     </div>
                     <div className="text-2xl font-bold text-gray-900">
-                        {stats.successRate !== null ? (stats.successRate * 100).toFixed(1) + '%' : '-'}
+                        {stats.successRate != null ? (stats.successRate * 100).toFixed(1) + '%' : '-'}
                     </div>
                 </div>
                 <div className="rounded-lg border border-[#E8E6E1] p-4 bg-white">
@@ -191,7 +191,7 @@ export default function TaskStatsChart({ stats, isLoading }: TaskStatsChartProps
                         Avg Execution Time
                     </div>
                     <div className="text-2xl font-bold text-gray-900">
-                        {stats.averageExecutionTimeSeconds !== null
+                        {stats.averageExecutionTimeSeconds != null
                             ? stats.averageExecutionTimeSeconds.toFixed(1) + 's'
                             : '-'}
                     </div>
@@ -201,7 +201,7 @@ export default function TaskStatsChart({ stats, isLoading }: TaskStatsChartProps
                         Avg Retry Count
                     </div>
                     <div className="text-2xl font-bold text-gray-900">
-                        {stats.averageRetryCount !== null ? stats.averageRetryCount.toFixed(2) : '-'}
+                        {stats.averageRetryCount != null ? stats.averageRetryCount.toFixed(2) : '-'}
                     </div>
                 </div>
             </div>

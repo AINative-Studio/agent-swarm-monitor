@@ -6,7 +6,25 @@ import type {
     TaskHistoryResponse,
     ActiveLeasesResponse,
     TaskStats,
+    TaskPriority,
 } from '@/types/tasks';
+
+export interface TaskCreateRequest {
+    taskType: string;
+    priority: TaskPriority;
+    payload: Record<string, unknown>;
+    requiredCapabilities: Record<string, unknown> | null;
+    maxRetries: number;
+}
+
+export interface PeerNode {
+    id: string;
+    peerId: string;
+    name: string;
+    capabilities: Record<string, unknown>;
+    isOnline: boolean;
+    currentLoad: number;
+}
 
 class TaskService {
     async getTaskQueue(filters?: TaskQueueFilters): Promise<TaskQueueResponse> {
@@ -34,6 +52,18 @@ class TaskService {
 
     async getTaskStats(): Promise<TaskStats> {
         return apiClient.get<TaskStats>('/tasks/stats');
+    }
+
+    async createTask(data: TaskCreateRequest): Promise<Task> {
+        return apiClient.post<Task>('/tasks', data);
+    }
+
+    async assignTask(taskId: string, peerId: string): Promise<Task> {
+        return apiClient.post<Task>(`/tasks/${taskId}/assign`, { peerId });
+    }
+
+    async getAvailablePeers(): Promise<PeerNode[]> {
+        return apiClient.get<PeerNode[]>('/tasks/peers');
     }
 }
 
