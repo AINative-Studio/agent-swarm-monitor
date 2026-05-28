@@ -19,6 +19,7 @@ import {
   Check,
   Plus,
   LogOut,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -38,6 +39,7 @@ const navItems: NavItem[] = [
   { name: 'Channels', href: '/channels', icon: Phone },
   { name: 'Audit Log', href: '/audit-log', icon: Clock },
   { name: 'Monitoring', href: '/monitoring', icon: Activity },
+  { name: 'Recursive Intelligence', href: '/recursive-intelligence', icon: RefreshCw },
   { name: 'Team', href: '/team', icon: Users },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
