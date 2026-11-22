@@ -1,16 +1,27 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { MessageSquare, Plus, Search, Trash2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useConversations, useDeleteConversation } from '@/hooks/useConversations';
+import conversationService from '@/lib/conversation-service';
 import { useAgentList } from '@/hooks/useOpenClawAgents';
 import { formatRelativeTime } from '@/lib/openclaw-utils';
 import { groupConversationsByAgent, type ConversationGroup } from '@/lib/conversation-grouping';
 import type { Conversation } from '@/types/conversation';
+
+const PAGE_SIZE = 20;
 
 interface ConversationListSidebarProps {
   /**
@@ -32,38 +43,96 @@ export default function ConversationListSidebar({
   className,
 }: ConversationListSidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [agentFilter, setAgentFilter] = useState<string>('all');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   // Fetch conversations (scoped to one agent, or all agents) and the agent
   // roster so each conversation can display its agent's name + avatar.
-  const { data, isLoading, isError } = useConversations(agentId);
+  // When the caller didn't lock the sidebar to a single agent via the
+  // `agentId` prop, the agent-filter dropdown below can still narrow the
+  // fetch/display down to one agent client-side.
+  const effectiveAgentId = agentId ?? (agentFilter !== 'all' ? agentFilter : undefined);
+  const { data, isLoading, isError } = useConversations(effectiveAgentId);
   const { data: agentListData } = useAgentList();
   const deleteConversation = useDeleteConversation();
 
   const agents = useMemo(() => agentListData?.agents ?? [], [agentListData?.agents]);
 
-  // Filter conversations based on search query (agent name or title)
+  // Message-content search: the conversation list-fetch response doesn't
+  // include message bodies, so searching "inside" messages goes through
+  // conversationService.searchMessages (keyword mode, no conversationId
+  // filter -> searches across all conversations) to resolve which
+  // conversation IDs contain a match. This is a separate, simpler feature
+  // from the semantic-search UI (useSearchMessages/SemanticSearchUI), which
+  // searches within a single already-open conversation.
+  const trimmedQuery = searchQuery.trim();
+  const { data: contentSearchData } = useQuery({
+    queryKey: ['conversation-sidebar-content-search', trimmedQuery],
+    queryFn: () => conversationService.searchMessages(trimmedQuery, undefined, { semantic: false }),
+    enabled: trimmedQuery.length > 0,
+    staleTime: 10000,
+  });
+
+  const matchingConversationIds = useMemo(() => {
+    return new Set((contentSearchData?.results ?? []).map((r) => r.conversationId));
+  }, [contentSearchData]);
+
+  // Filter conversations based on search query — matches conversation
+  // title, agent name, or message content (via the content-search lookup
+  // above).
   const filteredConversations = useMemo(() => {
     const conversations = data?.conversations ?? [];
-    if (!searchQuery.trim()) {
+    if (!trimmedQuery) {
       return conversations;
     }
 
-    const query = searchQuery.toLowerCase();
+    const query = trimmedQuery.toLowerCase();
     const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
 
     return conversations.filter((conv) => {
-      const titleMatch = conv.title?.toLowerCase().includes(query);
+      const titleMatch = conv.title?.toLowerCase().includes(query) ?? false;
       const agentName = agentsById.get(conv.agentId)?.name?.toLowerCase() ?? '';
       const agentMatch = agentName.includes(query);
-      return titleMatch || agentMatch;
+      const contentMatch = matchingConversationIds.has(conv.id);
+      return titleMatch || agentMatch || contentMatch;
     });
-  }, [data?.conversations, searchQuery, agents]);
+  }, [data?.conversations, trimmedQuery, agents, matchingConversationIds]);
 
-  // Group filtered conversations by agent, most-recently-active group first,
-  // most-recently-active conversation first within each group.
+  // Client-side pagination window ("load more on scroll"/button). The
+  // underlying hook/service already supports limit+offset; we page through
+  // the fetched (and filtered) results PAGE_SIZE at a time.
+  const visibleConversations = useMemo(
+    () => filteredConversations.slice(0, visibleCount),
+    [filteredConversations, visibleCount]
+  );
+  const hasMoreToShow = visibleConversations.length < filteredConversations.length;
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (nearBottom && hasMoreToShow) {
+      setVisibleCount((prev) => prev + PAGE_SIZE);
+    }
+  };
+
+  const handleLoadMore = () => setVisibleCount((prev) => prev + PAGE_SIZE);
+
+  const handleAgentFilterChange = (value: string) => {
+    setAgentFilter(value);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  // Group the currently-visible (paginated) conversations by agent,
+  // most-recently-active group first, most-recently-active conversation
+  // first within each group.
   const groups = useMemo<ConversationGroup[]>(
-    () => groupConversationsByAgent(filteredConversations, agents),
-    [filteredConversations, agents]
+    () => groupConversationsByAgent(visibleConversations, agents),
+    [visibleConversations, agents]
   );
 
   const handleDelete = (e: React.MouseEvent, conversation: Conversation) => {
@@ -79,15 +148,38 @@ export default function ConversationListSidebar({
   const lastMessagePreview = (conversation: Conversation) =>
     conversation.title || 'Untitled Conversation';
 
-  // Loading state
+  // Loading state — a real skeleton placeholder list (shimmering rows that
+  // approximate the eventual agent-group header + conversation rows),
+  // rather than a bare spinner.
   if (isLoading) {
     return (
-      <div className={cn('flex flex-col h-full bg-white border-r border-gray-200', className)}>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 text-gray-400 animate-spin mx-auto mb-2" data-testid="conversation-list-skeleton" />
-            <p className="text-sm text-gray-500">Loading conversations...</p>
-          </div>
+      <div
+        className={cn('flex flex-col h-full bg-white border-r border-gray-200', className)}
+        data-testid="conversation-list-skeleton"
+        aria-busy="true"
+        aria-label="Loading conversations"
+      >
+        <span className="sr-only">Loading conversations...</span>
+        <div className="p-4 border-b border-gray-200 space-y-3">
+          <div className="h-10 w-full rounded-md bg-gray-200 animate-pulse" />
+          <div className="h-10 w-full rounded-md bg-gray-100 animate-pulse" />
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {Array.from({ length: 2 }).map((_, groupIndex) => (
+            <div key={groupIndex} className="pb-2">
+              <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100">
+                <div className="w-6 h-6 rounded-full bg-gray-200 animate-pulse shrink-0" />
+                <div className="h-3 w-24 rounded bg-gray-200 animate-pulse" />
+              </div>
+              {Array.from({ length: 3 }).map((_, rowIndex) => (
+                <div key={rowIndex} className="px-4 py-3 border-b border-gray-100 space-y-2">
+                  <div className="h-4 w-3/4 rounded bg-gray-200 animate-pulse" />
+                  <div className="h-3 w-1/3 rounded bg-gray-100 animate-pulse" />
+                  <div className="h-3 w-1/4 rounded bg-gray-100 animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -137,15 +229,38 @@ export default function ConversationListSidebar({
             type="text"
             placeholder="Search conversations..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9 pr-4 h-10 bg-gray-50 border-gray-200 focus:bg-white"
             aria-label="Search conversations"
           />
         </div>
+
+        {/* Agent filter dropdown — only shown when the sidebar isn't already
+            locked to a single agent via the `agentId` prop. */}
+        {!agentId && (
+          <Select value={agentFilter} onValueChange={handleAgentFilterChange}>
+            <SelectTrigger
+              className="w-full h-10 bg-gray-50 border-gray-200 text-gray-900 text-sm focus:bg-white"
+              aria-label="Filter by agent"
+            >
+              <SelectValue placeholder="All agents" />
+            </SelectTrigger>
+            <SelectContent className="bg-white border-gray-200">
+              <SelectItem value="all" className="text-sm text-gray-900">
+                All agents
+              </SelectItem>
+              {agents.map((agent) => (
+                <SelectItem key={agent.id} value={agent.id} className="text-sm text-gray-900">
+                  {agent.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Conversation list, grouped by agent */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" onScroll={handleScroll} data-testid="conversation-list-scroll">
         {!hasConversations ? (
           // Empty state - no conversations at all
           <div className="flex items-center justify-center h-full px-6 py-8">
@@ -264,6 +379,20 @@ export default function ConversationListSidebar({
               </AnimatePresence>
             </div>
           ))
+        )}
+
+        {hasMoreToShow && (
+          <div className="p-3">
+            <Button
+              onClick={handleLoadMore}
+              variant="outline"
+              size="sm"
+              className="w-full"
+              aria-label="Load more conversations"
+            >
+              Load more conversations
+            </Button>
+          </div>
         )}
       </div>
     </div>

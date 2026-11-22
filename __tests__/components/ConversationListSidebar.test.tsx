@@ -21,10 +21,21 @@ vi.mock('@/hooks/useOpenClawAgents', () => ({
 import { useConversations, useCreateConversation, useDeleteConversation } from '@/hooks/useConversations';
 import { useAgentList } from '@/hooks/useOpenClawAgents';
 
+// Mock the content-search service call used directly by the sidebar for
+// message-content search (separate from the semantic-search feature).
+vi.mock('@/lib/conversation-service', () => ({
+  default: {
+    searchMessages: vi.fn(),
+  },
+}));
+
+import conversationService from '@/lib/conversation-service';
+
 const mockUseConversations = vi.mocked(useConversations);
 const mockUseCreateConversation = vi.mocked(useCreateConversation);
 const mockUseDeleteConversation = vi.mocked(useDeleteConversation);
 const mockUseAgentList = vi.mocked(useAgentList);
+const mockSearchMessages = vi.mocked(conversationService.searchMessages);
 
 // Helper to wrap component with QueryClient
 function renderWithQueryClient(ui: React.ReactElement) {
@@ -231,6 +242,7 @@ describe('ConversationListSidebar', () => {
     } as unknown as ReturnType<typeof useDeleteConversation>);
 
     mockAgentsSuccess(mockAgents);
+    mockSearchMessages.mockResolvedValue({ results: [], total: 0 });
   });
 
   function renderSidebar(selectedConversationId: string | null = null) {
@@ -505,6 +517,150 @@ describe('ConversationListSidebar', () => {
       expect(mockUseConversations.mock.calls[0]?.[0]).toBe('agent-1');
       expect(screen.getAllByRole('group')).toHaveLength(1);
       expect(screen.getByText('Linear Ticket Solver')).toBeInTheDocument();
+    });
+
+    it('hides the agent filter dropdown when agentId is provided', () => {
+      mockConversationsSuccess({
+        conversations: mockConversations.filter((c) => c.agentId === 'agent-1'),
+        total: 2,
+        limit: 50,
+        offset: 0,
+      });
+
+      renderWithQueryClient(
+        <ConversationListSidebar
+          agentId="agent-1"
+          selectedConversationId={null}
+          onSelectConversation={mockOnSelectConversation}
+          onNewConversation={mockOnNewConversation}
+        />
+      );
+
+      expect(screen.queryByLabelText(/filter by agent/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Agent filter dropdown', () => {
+    it('renders a dropdown to filter by agent when no agentId prop is given', () => {
+      mockConversationsSuccess({ conversations: mockConversations, total: 3, limit: 50, offset: 0 });
+      renderSidebar();
+
+      expect(screen.getByLabelText(/filter by agent/i)).toBeInTheDocument();
+    });
+
+    it('re-fetches conversations scoped to the selected agent when filter changes', async () => {
+      const user = userEvent.setup();
+      mockConversationsSuccess({ conversations: mockConversations, total: 3, limit: 50, offset: 0 });
+      renderSidebar();
+
+      const dropdown = screen.getByLabelText(/filter by agent/i);
+      await user.click(dropdown);
+
+      const option = await screen.findByText('Team Slack Engineer', { selector: '[role="option"] span' });
+      await user.click(option);
+
+      await waitFor(() => {
+        const lastCallArgs = mockUseConversations.mock.calls.at(-1);
+        expect(lastCallArgs?.[0]).toBe('agent-2');
+      });
+    });
+  });
+
+  describe('Message content search', () => {
+    it('searches message content (not just title/agent name) and includes matching conversations', async () => {
+      const user = userEvent.setup();
+      mockConversationsSuccess({ conversations: mockConversations, total: 3, limit: 50, offset: 0 });
+      mockSearchMessages.mockResolvedValue({
+        results: [
+          {
+            id: 'm1',
+            conversationId: 'conv-2',
+            conversationTitle: 'Second Conversation',
+            content: 'talking about widgets here',
+            role: 'user',
+            agentName: 'Linear Ticket Solver',
+            timestamp: new Date().toISOString(),
+            relevanceScore: 0.9,
+            highlightedContent: 'talking about <mark>widgets</mark> here',
+          },
+        ],
+        total: 1,
+      });
+
+      renderSidebar();
+
+      const searchInput = screen.getByPlaceholderText(/search conversations/i);
+      await user.type(searchInput, 'widgets');
+
+      await waitFor(() => {
+        expect(mockSearchMessages).toHaveBeenCalledWith(
+          'widgets',
+          undefined,
+          expect.objectContaining({ semantic: false })
+        );
+      });
+
+      await waitFor(() => {
+        // conv-2 matches via message content even though "widgets" isn't in
+        // its title or agent name.
+        expect(screen.getByText('Second Conversation')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Skeleton loading state', () => {
+    it('renders a skeleton placeholder list, not just a spinner, while loading', () => {
+      mockConversationsLoading();
+      renderSidebar();
+
+      const skeleton = screen.getByTestId('conversation-list-skeleton');
+      expect(skeleton).toBeInTheDocument();
+      expect(skeleton).toHaveAttribute('aria-busy', 'true');
+      // Expect multiple shimmer placeholder blocks, not a single spinner icon.
+      expect(skeleton.querySelectorAll('.animate-pulse').length).toBeGreaterThan(3);
+    });
+  });
+
+  describe('Pagination', () => {
+    function manyConversations(count: number): Conversation[] {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `conv-page-${i}`,
+        agentId: 'agent-1',
+        title: `Conversation ${i}`,
+        createdAt: new Date(Date.now() - i * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - i * 60 * 1000).toISOString(),
+        lastMessageAt: new Date(Date.now() - i * 60 * 1000).toISOString(),
+        messageCount: 1,
+      }));
+    }
+
+    it('shows a "Load more" control when there are more conversations than the page size', () => {
+      mockConversationsSuccess({ conversations: manyConversations(30), total: 30, limit: 50, offset: 0 });
+      renderSidebar();
+
+      expect(screen.getByRole('button', { name: /load more conversations/i })).toBeInTheDocument();
+      // Only the first page should be rendered initially.
+      expect(screen.queryByText('Conversation 25')).not.toBeInTheDocument();
+    });
+
+    it('reveals more conversations when "Load more" is clicked', async () => {
+      const user = userEvent.setup();
+      mockConversationsSuccess({ conversations: manyConversations(30), total: 30, limit: 50, offset: 0 });
+      renderSidebar();
+
+      const loadMoreButton = screen.getByRole('button', { name: /load more conversations/i });
+      await user.click(loadMoreButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Conversation 25')).toBeInTheDocument();
+      });
+    });
+
+    it('does not show "Load more" when all conversations fit on one page', () => {
+      mockConversationsSuccess({ conversations: mockConversations, total: 3, limit: 50, offset: 0 });
+      renderSidebar();
+
+      expect(screen.queryByRole('button', { name: /load more conversations/i })).not.toBeInTheDocument();
     });
   });
 });
