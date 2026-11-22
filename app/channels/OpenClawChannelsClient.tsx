@@ -110,13 +110,10 @@ export default function OpenClawChannelsClient() {
 
   // Handle connect button click
   const handleConnect = (channel: Channel) => {
-    console.log('[ChannelsClient] handleConnect called with channel:', channel);
     if (channel.connected) {
-      console.log('[ChannelsClient] Channel already connected, showing disconnect dialog');
       // If already connected, show disconnect dialog
       setDisconnectDialog({ type: channel.id as ChannelId, channelName: channel.name });
     } else {
-      console.log('[ChannelsClient] Channel not connected, showing connection modal');
       // If not connected, show connection modal
       setConnectionModal({ type: channel.id as ChannelId, channelName: channel.name });
     }
@@ -124,11 +121,7 @@ export default function OpenClawChannelsClient() {
 
   // Handle WhatsApp connection
   const handleWhatsAppConnect = async (data: { phoneNumber: string }) => {
-    console.log('[ChannelsClient] handleWhatsAppConnect called with data:', data);
-    if (!selectedAgent) {
-      console.log('[ChannelsClient] No selected agent, aborting WhatsApp connection');
-      return;
-    }
+    if (!selectedAgent) return;
 
     try {
       const updatedConfig = {
@@ -143,18 +136,16 @@ export default function OpenClawChannelsClient() {
         },
       };
 
-      console.log('[ChannelsClient] Saving WhatsApp config:', updatedConfig);
       await updateSettings.mutateAsync({
         configuration: updatedConfig,
       });
-      console.log('[ChannelsClient] WhatsApp config saved successfully');
 
       toast({
         title: 'WhatsApp Connected',
         description: 'WhatsApp channel has been successfully connected.',
       });
     } catch (error) {
-      console.error('[ChannelsClient] Error saving WhatsApp config:', error);
+      console.error('Error saving WhatsApp config:', error);
       toast({
         title: 'Connection Failed',
         description: 'Failed to connect WhatsApp channel. Please try again.',
@@ -168,11 +159,7 @@ export default function OpenClawChannelsClient() {
     channelId: 'telegram' | 'discord' | 'slack',
     data: { botToken: string; botUsername?: string }
   ) => {
-    console.log(`[ChannelsClient] handleTokenConnect called for ${channelId} with data:`, data);
-    if (!selectedAgent) {
-      console.log('[ChannelsClient] No selected agent, aborting token connection');
-      return;
-    }
+    if (!selectedAgent) return;
 
     try {
       const channelData =
@@ -198,11 +185,9 @@ export default function OpenClawChannelsClient() {
         },
       };
 
-      console.log(`[ChannelsClient] Saving ${channelId} config:`, updatedConfig);
       await updateSettings.mutateAsync({
         configuration: updatedConfig,
       });
-      console.log(`[ChannelsClient] ${channelId} config saved successfully`);
 
       const channelName = channelId.charAt(0).toUpperCase() + channelId.slice(1);
       toast({
@@ -210,7 +195,7 @@ export default function OpenClawChannelsClient() {
         description: `${channelName} channel has been successfully connected.`,
       });
     } catch (error) {
-      console.error(`[ChannelsClient] Error saving ${channelId} config:`, error);
+      console.error(`Error saving ${channelId} config:`, error);
       const channelName = channelId.charAt(0).toUpperCase() + channelId.slice(1);
       toast({
         title: 'Connection Failed',
@@ -248,7 +233,7 @@ export default function OpenClawChannelsClient() {
 
       setDisconnectDialog(null);
     } catch (error) {
-      console.error('[ChannelsClient] Error disconnecting channel:', error);
+      console.error('Error disconnecting channel:', error);
       toast({
         title: 'Disconnect Failed',
         description: 'Failed to disconnect channel. Please try again.',
