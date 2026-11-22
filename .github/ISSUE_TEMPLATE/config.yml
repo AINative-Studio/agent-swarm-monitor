@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Support
+    url: https://github.com/AINative-Studio/agent-swarm-monitor/blob/main/SUPPORT.md
+    about: Please check the SUPPORT.md guide for how to get help with this project.
