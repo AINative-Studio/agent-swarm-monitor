@@ -26,10 +26,27 @@ class MockWebSocket {
 
     url: string;
     readyState: number;
-    onopen: ((event: Event) => void) | null = null;
-    onclose: ((event: CloseEvent) => void) | null = null;
-    onerror: ((event: Event) => void) | null = null;
-    onmessage: ((event: MessageEvent) => void) | null = null;
+
+    // Real browsers implement onopen/onclose/onerror/onmessage as accessor
+    // properties on WebSocket.prototype, not plain instance fields -- tests
+    // use vi.spyOn(MockWebSocket.prototype, 'onmessage', 'set') to intercept
+    // handler registration, which only works against a real prototype
+    // setter. Class-field syntax (`onmessage = null`) creates an own
+    // property on each instance instead, so vi.spyOn against the prototype
+    // silently had nothing to spy on and threw "onmessage does not exist".
+    private _onopen: ((event: Event) => void) | null = null;
+    private _onclose: ((event: CloseEvent) => void) | null = null;
+    private _onerror: ((event: Event) => void) | null = null;
+    private _onmessage: ((event: MessageEvent) => void) | null = null;
+
+    get onopen() { return this._onopen; }
+    set onopen(handler) { this._onopen = handler; }
+    get onclose() { return this._onclose; }
+    set onclose(handler) { this._onclose = handler; }
+    get onerror() { return this._onerror; }
+    set onerror(handler) { this._onerror = handler; }
+    get onmessage() { return this._onmessage; }
+    set onmessage(handler) { this._onmessage = handler; }
 
     constructor(url: string) {
         this.url = url;
@@ -57,7 +74,29 @@ class MockWebSocket {
     }
 }
 
-global.WebSocket = MockWebSocket as any;
+// Wrapped in vi.fn() so tests can assert on construction args (e.g. the
+// auth token embedded in the URL) via toHaveBeenCalledWith -- a plain class
+// assignment isn't a spy, and "should include authentication token in
+// connection" asserted against it unconditionally since this file's
+// original version, meaning it never actually passed. Individual tests
+// still override this with their own vi.spyOn(global, 'WebSocket')
+// .mockImplementation(...) where they need custom connect-failure behavior;
+// this is just the default "really connects" case.
+//
+// The real browser WebSocket class exposes CONNECTING/OPEN/CLOSING/CLOSED
+// as static constants, and hooks/useTaskUpdates.ts reads WebSocket.OPEN
+// directly (not MockWebSocket.OPEN) when deciding whether to send. A plain
+// vi.fn() wrapper has no static properties of its own, so that read was
+// silently `undefined` and `ws.readyState === WebSocket.OPEN` was always
+// false -- the batched subscribe send() never fired. Copy the statics onto
+// the mock function so it satisfies the same interface as the real global.
+global.WebSocket = vi.fn((url: string) => new MockWebSocket(url)) as any;
+Object.assign(global.WebSocket, {
+    CONNECTING: MockWebSocket.CONNECTING,
+    OPEN: MockWebSocket.OPEN,
+    CLOSING: MockWebSocket.CLOSING,
+    CLOSED: MockWebSocket.CLOSED,
+});
 
 const mockTask: Task = {
     id: 'task-123',
@@ -97,7 +136,19 @@ describe('useTaskUpdates', () => {
     });
 
     afterEach(() => {
+        // vi.clearAllMocks() only resets call history -- it does NOT restore
+        // spied implementations, so vi.spyOn(MockWebSocket.prototype, ...,
+        // 'set').mockImplementation(...) and vi.spyOn(global,
+        // 'WebSocket').mockImplementation(...) from earlier tests stayed
+        // active and leaked into later tests (e.g. the exponential-backoff
+        // test's global.WebSocket override and Math.random pin were still
+        // in effect during the NEXT test, corrupting its reconnect timing).
+        // vi.restoreAllMocks() actually un-spies. Also guarantee real timers
+        // are restored even if a test that called vi.useFakeTimers()
+        // failed/threw before reaching its own vi.useRealTimers() call.
         vi.clearAllTimers();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
     });
 
     describe('WebSocket Connection', () => {
@@ -341,7 +392,6 @@ describe('useTaskUpdates', () => {
 
     describe('Connection Resilience', () => {
         it('should automatically reconnect on connection loss', async () => {
-            vi.useFakeTimers();
             let closeHandler: ((event: CloseEvent) => void) | null = null;
 
             vi.spyOn(MockWebSocket.prototype, 'onclose', 'set').mockImplementation(
@@ -354,9 +404,16 @@ describe('useTaskUpdates', () => {
                 wrapper: createWrapper(),
             });
 
+            // Establish the initial connection with real timers -- the
+            // MockWebSocket constructor's onopen fires via a real
+            // setTimeout(0), so switching to fake timers before this
+            // resolves leaves waitFor polling a clock nothing ever
+            // advances (it previously hung for the full 30s test timeout).
             await waitFor(() => {
                 expect(result.current.isConnected).toBe(true);
             });
+
+            vi.useFakeTimers();
 
             // Simulate connection loss
             act(() => {
@@ -367,29 +424,63 @@ describe('useTaskUpdates', () => {
 
             expect(result.current.isConnected).toBe(false);
 
-            // Fast-forward past reconnect delay
+            // Fast-forward past reconnect delay. This is the FIRST close,
+            // but reconnectAttemptsRef is incremented to 1 *before*
+            // getReconnectDelay() reads it (so the actual formula computes
+            // 1000*2^1=2000 base here, not 2^0=1000) -- so the real delay
+            // range is 2000-3000ms with jitter, not 0-2000ms. 2000ms was
+            // sometimes too short.
             act(() => {
-                vi.advanceTimersByTime(2000);
-            });
-
-            await waitFor(() => {
-                expect(result.current.isConnected).toBe(true);
+                vi.advanceTimersByTime(3100);
             });
 
             vi.useRealTimers();
+
+            // The reconnected MockWebSocket's onopen still fires via a real
+            // setTimeout(0), so this waitFor needs real timers too.
+            await waitFor(() => {
+                expect(result.current.isConnected).toBe(true);
+            });
         });
 
         it('should use exponential backoff for reconnection attempts', async () => {
             vi.useFakeTimers();
+            // getReconnectDelay() adds up to 1000ms of random jitter on top
+            // of the exponential base. At these magnitudes (base delays of
+            // ~1-2s, ~2-3s, ~4-5s) two jittered samples from adjacent steps
+            // can overlap purely by chance -- e.g. attempt 0 rolling near its
+            // 2000ms ceiling and attempt 1 rolling near its 2000ms floor --
+            // making a strict delays[i+1] > delays[i] assertion on raw
+            // samples genuinely flaky, not just slow. Pin Math.random to 0
+            // so this test verifies the real exponential-growth logic
+            // deterministically, which is what it's actually named for.
+            vi.spyOn(Math, 'random').mockReturnValue(0);
             const connectionAttempts: number[] = [];
             let attemptCount = 0;
 
-            vi.spyOn(global, 'WebSocket').mockImplementation((url: string) => {
+            vi.spyOn(global, 'WebSocket').mockImplementation((url: string | URL) => {
                 attemptCount++;
                 connectionAttempts.push(Date.now());
 
-                const ws = new MockWebSocket(url) as any;
-                // Simulate immediate failure
+                const ws = new MockWebSocket(String(url)) as any;
+                // Simulate a connection that fails outright. MockWebSocket's
+                // own constructor unconditionally schedules onopen via its
+                // internal setTimeout(0); the hook's connect() then assigns
+                // its own ws.onopen handler (which resets
+                // reconnectAttemptsRef to 0 on success) right after this mock
+                // returns -- so clearing onopen here gets clobbered by that
+                // later assignment, and onopen fires every cycle regardless,
+                // keeping getReconnectDelay() stuck reading attempt 0
+                // forever (the "backoff" never grew past its first step).
+                // Not a bug in the exponential-backoff logic itself -- stub
+                // out the whole open/close pairing at the connection level
+                // so the hook's onopen handler, whatever it's set to, simply
+                // never runs for this failed-attempt simulation.
+                Object.defineProperty(ws, 'onopen', {
+                    get: () => null,
+                    set: () => {},
+                    configurable: true,
+                });
                 setTimeout(() => {
                     if (ws.onclose) {
                         ws.onclose(new CloseEvent('close', { code: 1006 }));
@@ -402,14 +493,21 @@ describe('useTaskUpdates', () => {
                 wrapper: createWrapper(),
             });
 
-            // Allow multiple reconnection attempts
+            // getReconnectDelay() is 1000 * 2^attempt + up to 1000ms jitter,
+            // so a flat 10s advance per loop iteration let multiple reconnect
+            // cycles fire within a single iteration (attempt 0's ~1-2s delay
+            // and attempt 1's ~2-3s delay both fit inside one 10s window),
+            // breaking the 1:1 mapping this test's indexing assumed between
+            // loop iteration and connectionAttempts entry -- advance by just
+            // past each step's own worst-case delay instead, one attempt at
+            // a time. vi.advanceTimersByTimeAsync also flushes the microtask
+            // queue between ticks, which a real-clock waitFor can't do
+            // against a frozen fake clock (needed since vi.useFakeTimers()
+            // runs before renderHook here).
             for (let i = 0; i < 4; i++) {
-                act(() => {
-                    vi.advanceTimersByTime(10000); // Advance timers
-                });
-                await waitFor(() => {
-                    expect(attemptCount).toBeGreaterThan(i);
-                });
+                const delayForStep = 1000 * Math.pow(2, i); // jitter pinned to 0 above
+                await vi.advanceTimersByTimeAsync(delayForStep + 100);
+                expect(attemptCount).toBeGreaterThan(i);
             }
 
             // Verify exponential backoff (delays should increase)
@@ -455,6 +553,13 @@ describe('useTaskUpdates', () => {
     describe('Polling Fallback', () => {
         it('should fall back to polling after max reconnection attempts', async () => {
             vi.useFakeTimers();
+            // Worst case over 5 attempts is (1000+2000+4000+8000+16000) +
+            // 5*1000 jitter = 36000ms, but real random jitter rolling high
+            // across all 5 attempts can exceed a 60000ms advance purely by
+            // chance (observed ~62273ms in one run) -- pin it to 0 so this
+            // test deterministically reaches the actual max-attempts
+            // fallback path it's named for, not a jitter-dependent race.
+            vi.spyOn(Math, 'random').mockReturnValue(0);
 
             vi.spyOn(global, 'WebSocket').mockImplementation(() => {
                 throw new Error('WebSocket unavailable');
@@ -464,20 +569,26 @@ describe('useTaskUpdates', () => {
                 wrapper: createWrapper(),
             });
 
-            // Allow reconnection attempts to exhaust
-            act(() => {
-                vi.advanceTimersByTime(60000);
+            // The WebSocket constructor throws synchronously here, so the
+            // whole connect -> catch -> scheduled retry chain runs entirely
+            // on fake timers with no real setTimeout(0)s to wait out --
+            // waitFor (which polls on a real clock) has nothing to wait
+            // for once the fake clock is fully advanced; assert directly.
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(60000);
             });
 
-            await waitFor(() => {
-                expect(result.current.useFallbackPolling).toBe(true);
-            });
-
-            vi.useRealTimers();
+            expect(result.current.useFallbackPolling).toBe(true);
         });
 
         it('should poll at specified interval when using fallback', async () => {
             vi.useFakeTimers();
+            // Same jitter-can-exceed-the-advance-window and
+            // waitFor-polls-a-real-clock-against-a-frozen-fake-one issues as
+            // "should fall back to polling after max reconnection attempts"
+            // above -- pin jitter and advance+assert directly instead of
+            // waitFor.
+            vi.spyOn(Math, 'random').mockReturnValue(0);
             const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
                 new Response(JSON.stringify({ tasks: [mockTask] }))
             );
@@ -486,31 +597,44 @@ describe('useTaskUpdates', () => {
                 throw new Error('WebSocket unavailable');
             });
 
-            renderHook(() => useTaskUpdates([mockTask.id], { pollingInterval: 5000 }), {
+            const { result } = renderHook(() => useTaskUpdates([mockTask.id], { pollingInterval: 5000 }), {
                 wrapper: createWrapper(),
             });
 
-            // Allow fallback to engage
-            act(() => {
-                vi.advanceTimersByTime(60000);
+            // Allow fallback to engage -- advance in two steps rather than
+            // one 60000ms call. advanceTimersByTimeAsync appears to compute
+            // its tick schedule up front: the setInterval that gets created
+            // *during* the advance (once useFallbackPolling flips true,
+            // partway through) wasn't being picked up by the remainder of
+            // that same in-flight advance call, so pollTasks never fired
+            // even though plenty of fake-clock time was left afterward.
+            // Finishing the reconnect exhaustion first, then starting a
+            // fresh advance call once the interval already exists, avoids
+            // that race.
+            await act(async () => {
+                // Delays use 1000 * 2^attempt where attempt is already
+                // incremented before the read, so attempt 1..5 give
+                // 2000+4000+8000+16000+30000(capped) = 60000ms total with
+                // jitter pinned to 0.
+                await vi.advanceTimersByTimeAsync(60000);
             });
 
-            await waitFor(() => {
-                expect(fetchSpy).toHaveBeenCalled();
+            expect(result.current.useFallbackPolling).toBe(true);
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(5000);
             });
+
+            expect(fetchSpy).toHaveBeenCalled();
 
             const initialCallCount = fetchSpy.mock.calls.length;
 
             // Advance by polling interval
-            act(() => {
-                vi.advanceTimersByTime(5000);
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(5000);
             });
 
-            await waitFor(() => {
-                expect(fetchSpy.mock.calls.length).toBeGreaterThan(initialCallCount);
-            });
-
-            vi.useRealTimers();
+            expect(fetchSpy.mock.calls.length).toBeGreaterThan(initialCallCount);
         });
     });
 
@@ -575,9 +699,19 @@ describe('useTaskUpdates', () => {
                 }
             );
 
-            await waitFor(() => {
-                expect(sentMessages.length).toBeGreaterThan(0);
+            // vi.useFakeTimers() runs before renderHook here (needed so the
+            // later batchDelay assertions can be exact), which means the
+            // initial connection's onopen (a real setTimeout(0) inside
+            // MockWebSocket's constructor) and its subsequent batched
+            // subscribeToTasks send are themselves fake timers -- waitFor
+            // polls on a real clock, which can't observe a frozen fake one.
+            // advanceTimersByTimeAsync flushes both the fake clock and the
+            // microtask queue between ticks.
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(200); // onopen (0ms) + batchDelay (100ms) + margin
             });
+
+            expect(sentMessages.length).toBeGreaterThan(0);
 
             sentMessages = [];
 
@@ -593,16 +727,12 @@ describe('useTaskUpdates', () => {
             // Should not have sent yet
             expect(sentMessages.length).toBe(0);
 
-            act(() => {
-                vi.advanceTimersByTime(100); // Complete batch delay
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(100); // Complete batch delay
             });
 
-            await waitFor(() => {
-                // Should have sent only one batched message
-                expect(sentMessages.length).toBe(1);
-            });
-
-            vi.useRealTimers();
+            // Should have sent only one batched message
+            expect(sentMessages.length).toBe(1);
         });
     });
 });

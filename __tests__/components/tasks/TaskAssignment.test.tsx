@@ -16,6 +16,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import TaskAssignment from '@/components/tasks/TaskAssignment';
+import type { Task } from '@/types/tasks';
 
 // Mock the task service
 vi.mock('@/lib/task-service', () => ({
@@ -25,7 +26,7 @@ vi.mock('@/lib/task-service', () => ({
     },
 }));
 
-const mockTask = {
+const mockTask: Task = {
     id: 'task-123',
     taskId: 'task-123',
     taskType: 'code_generation',
@@ -143,7 +144,9 @@ describe('TaskAssignment', () => {
                 { wrapper: createWrapper() }
             );
 
-            expect(screen.getByRole('dialog')).toHaveAttribute('aria-label', /assign task/i);
+            // jest-dom's toHaveAttribute does an exact string match on the
+            // attribute value -- it can't take a regex matcher there.
+            expect(screen.getByRole('dialog').getAttribute('aria-label')).toMatch(/assign task/i);
             expect(screen.getByLabelText(/select node/i)).toBeInTheDocument();
         });
     });
@@ -370,10 +373,14 @@ describe('TaskAssignment', () => {
             await user.click(assignButton);
 
             await waitFor(() => {
-                expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-                expect(screen.getByText(/confirm assignment/i)).toBeInTheDocument();
-                expect(screen.getByText(/node alpha/i)).toBeInTheDocument();
-                expect(screen.getByText(/task-123/i)).toBeInTheDocument();
+                const dialog = screen.getByRole('alertdialog');
+                expect(dialog).toBeInTheDocument();
+                expect(within(dialog).getByText(/confirm assignment/i)).toBeInTheDocument();
+                // "Node Alpha" also appears in the peer list and the
+                // "Assign to Node Alpha" button text outside the dialog,
+                // so this must be scoped to the dialog itself.
+                expect(within(dialog).getByText(/node alpha/i)).toBeInTheDocument();
+                expect(within(dialog).getByText(/task-123/i)).toBeInTheDocument();
             });
         });
 
