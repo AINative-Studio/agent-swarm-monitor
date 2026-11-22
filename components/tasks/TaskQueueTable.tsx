@@ -24,13 +24,14 @@ const PRIORITY_COLORS = {
 interface TaskQueueTableProps {
     tasks: Task[];
     onTaskClick: (taskId: string) => void;
+    onAssignClick?: (taskId: string) => void;
     isLoading?: boolean;
 }
 
 type SortKey = 'createdAt' | 'priority' | 'status';
 type SortDirection = 'asc' | 'desc';
 
-export default function TaskQueueTable({ tasks, onTaskClick, isLoading }: TaskQueueTableProps) {
+export default function TaskQueueTable({ tasks, onTaskClick, onAssignClick, isLoading }: TaskQueueTableProps) {
     const [sortKey, setSortKey] = useState<SortKey>('createdAt');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
@@ -143,17 +144,24 @@ export default function TaskQueueTable({ tasks, onTaskClick, isLoading }: TaskQu
                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                                 Created
                             </th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                                Actions
+                            </th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-[#E8E6E1]">
                         {sortedTasks.map((task) => (
                             <tr
                                 key={task.id}
+                                data-testid={`task-row-${task.taskId ?? task.id}`}
                                 onClick={() => onTaskClick(task.id)}
                                 className="hover:bg-gray-50 cursor-pointer transition-colors"
                             >
                                 <td className="px-4 py-3 text-sm font-mono text-gray-900">
-                                    {(task.taskId ?? task.id).slice(0, 8)}...
+                                    {(() => {
+                                        const id = task.taskId ?? task.id;
+                                        return id.length > 8 ? `${id.slice(0, 8)}...` : id;
+                                    })()}
                                 </td>
                                 <td className="px-4 py-3 text-sm text-gray-700">{task.taskType}</td>
                                 <td className="px-4 py-3 text-sm">
@@ -177,6 +185,20 @@ export default function TaskQueueTable({ tasks, onTaskClick, isLoading }: TaskQu
                                 </td>
                                 <td className="px-4 py-3 text-sm text-gray-600">
                                     {new Date(task.createdAt).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-3 text-sm">
+                                    {!task.assignedPeerId && onAssignClick && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onAssignClick(task.taskId ?? task.id);
+                                            }}
+                                            className="text-sm font-medium text-primary hover:underline"
+                                        >
+                                            Assign
+                                        </button>
+                                    )}
                                 </td>
                             </tr>
                         ))}

@@ -58,7 +58,7 @@ describe('ApiClient', () => {
 
             const result = await apiClient.get<Record<string, string>>('/agents');
             expect(result).toEqual({ agentId: '123', userName: 'test' });
-            expect(fetch).toHaveBeenCalledWith('/api/v1/agents', expect.objectContaining({ method: 'GET' }));
+            expect(fetch).toHaveBeenCalledWith('http://localhost:8000/api/v1/agents', expect.objectContaining({ method: 'GET' }));
         });
 
         it('should append query params', async () => {
@@ -126,7 +126,7 @@ describe('ApiClient', () => {
 
             await apiClient.patch('/agents/123/settings', { persona: 'new persona' });
             expect(fetch).toHaveBeenCalledWith(
-                '/api/v1/agents/123/settings',
+                'http://localhost:8000/api/v1/agents/123/settings',
                 expect.objectContaining({ method: 'PATCH' })
             );
         });
@@ -140,7 +140,7 @@ describe('ApiClient', () => {
 
             await expect(apiClient.delete('/agents/123')).resolves.toBeUndefined();
             expect(fetch).toHaveBeenCalledWith(
-                '/api/v1/agents/123',
+                'http://localhost:8000/api/v1/agents/123',
                 expect.objectContaining({ method: 'DELETE' })
             );
         });

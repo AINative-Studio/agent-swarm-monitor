@@ -164,9 +164,15 @@ describe('TaskCreateForm', () => {
 
             const payloadInput = screen.getByLabelText(/payload/i) as HTMLTextAreaElement;
             const validJSON = '{"model": "claude-3-opus", "prompt": "Hello"}';
+            // user-event's type() parses `{` as the opener of special-key
+            // syntax (e.g. `{enter}`) -- only `{` needs escaping, via `{{`,
+            // to produce a literal brace; a bare `}` has no special meaning
+            // outside of such a block and passes through as-is. The
+            // assertion below compares against the real, unescaped JSON.
+            const validJSONKeystrokes = validJSON.replace(/\{/g, '{{');
 
             await user.clear(payloadInput);
-            await user.type(payloadInput, validJSON);
+            await user.type(payloadInput, validJSONKeystrokes);
 
             expect(payloadInput.value).toBe(validJSON);
             expect(screen.queryByText(/invalid json/i)).not.toBeInTheDocument();
@@ -178,9 +184,13 @@ describe('TaskCreateForm', () => {
 
             const payloadInput = screen.getByLabelText(/payload/i);
             const invalidJSON = '{invalid json}';
+            // user-event's type() parses `{` as the opener of special-key
+            // syntax (e.g. `{enter}`) -- only `{` needs escaping, via `{{`,
+            // to produce a literal brace; a bare `}` passes through as-is.
+            const invalidJSONKeystrokes = invalidJSON.replace(/\{/g, '{{');
 
             await user.clear(payloadInput);
-            await user.type(payloadInput, invalidJSON);
+            await user.type(payloadInput, invalidJSONKeystrokes);
             await user.tab(); // Trigger blur event
 
             await waitFor(() => {
@@ -195,9 +205,11 @@ describe('TaskCreateForm', () => {
             const formatButton = screen.getByRole('button', { name: /format json/i });
             const payloadInput = screen.getByLabelText(/payload/i) as HTMLTextAreaElement;
 
-            // Enter minified JSON
+            // Enter minified JSON. user-event's type() parses `{` as the
+            // opener of special-key syntax (e.g. `{enter}`), so a literal
+            // `{` must be escaped via `{{`; a bare `}` needs no escaping.
             await user.clear(payloadInput);
-            await user.type(payloadInput, '{"a":1,"b":2}');
+            await user.type(payloadInput, '{{"a":1,"b":2}');
             await user.click(formatButton);
 
             await waitFor(() => {
@@ -282,9 +294,13 @@ describe('TaskCreateForm', () => {
 
             render(<TaskCreateForm onSuccess={onSuccess} />, { wrapper: createWrapper() });
 
-            // Fill form
+            // Fill form. user-event's type() parses `{` as the opener of
+            // special-key syntax (e.g. `{enter}`), so a literal `{` must
+            // be escaped via `{{`; a bare `}` needs no escaping.
             await user.type(screen.getByLabelText(/task type/i), 'code_generation');
-            await user.type(screen.getByLabelText(/payload/i), '{"model": "claude-3-opus"}');
+            const payloadInput = screen.getByLabelText(/payload/i);
+            await user.clear(payloadInput);
+            await user.type(payloadInput, '{{"model": "claude-3-opus"}');
 
             // Submit
             await user.click(screen.getByRole('button', { name: /create task/i }));
@@ -312,9 +328,11 @@ describe('TaskCreateForm', () => {
 
             render(<TaskCreateForm onSuccess={vi.fn()} />, { wrapper: createWrapper() });
 
-            // Fill and submit
+            // Fill and submit. The payload textarea already defaults to
+            // '{}', so no need to type it (and user-event's type() can't
+            // take a literal '{}' as plain text anyway -- it parses braces
+            // as special-key syntax).
             await user.type(screen.getByLabelText(/task type/i), 'test');
-            await user.type(screen.getByLabelText(/payload/i), '{}');
             await user.click(screen.getByRole('button', { name: /create task/i }));
 
             // Should show loading state
@@ -332,9 +350,11 @@ describe('TaskCreateForm', () => {
 
             render(<TaskCreateForm onSuccess={vi.fn()} />, { wrapper: createWrapper() });
 
-            // Fill and submit
+            // Fill and submit. The payload textarea already defaults to
+            // '{}', so no need to type it (and user-event's type() can't
+            // take a literal '{}' as plain text anyway -- it parses braces
+            // as special-key syntax).
             await user.type(screen.getByLabelText(/task type/i), 'test');
-            await user.type(screen.getByLabelText(/payload/i), '{}');
             await user.click(screen.getByRole('button', { name: /create task/i }));
 
             await waitFor(() => {
@@ -366,10 +386,12 @@ describe('TaskCreateForm', () => {
 
             render(<TaskCreateForm onSuccess={vi.fn()} />, { wrapper: createWrapper() });
 
-            // Fill and submit
+            // Fill and submit. The payload textarea already defaults to
+            // '{}', so no need to type it (and user-event's type() can't
+            // take a literal '{}' as plain text anyway -- it parses braces
+            // as special-key syntax).
             const taskTypeInput = screen.getByLabelText(/task type/i) as HTMLInputElement;
             await user.type(taskTypeInput, 'test');
-            await user.type(screen.getByLabelText(/payload/i), '{}');
             await user.click(screen.getByRole('button', { name: /create task/i }));
 
             await waitFor(() => {
