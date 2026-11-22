@@ -221,7 +221,7 @@ describe('Chat History Integration Tests', () => {
       // Verify messages loaded
       expect(result.current.data?.messages).toHaveLength(5);
       expect(result.current.data?.messages).toEqual(mockMessagesConv1);
-      expect(mockService.listMessages).toHaveBeenCalledWith('conv-1', undefined);
+      expect(mockService.listMessages).toHaveBeenCalledWith('conv-1', undefined, undefined);
     });
 
     it('should support pagination for conversations', async () => {
