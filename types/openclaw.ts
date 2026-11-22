@@ -204,3 +204,105 @@ export interface UpdateSwarmRequest {
   goal?: string;
   configuration?: Record<string, unknown>;
 }
+
+// ---------------------------------------------------------------------------
+// Audit Log
+// ---------------------------------------------------------------------------
+
+export type AuditEventType =
+  | 'agent_created'
+  | 'agent_paused'
+  | 'agent_resumed'
+  | 'agent_deleted'
+  | 'agent_provisioned'
+  | 'settings_changed'
+  | 'api_key_rotated'
+  | 'channel_connected'
+  | 'channel_disconnected'
+  | 'heartbeat_failed'
+  | 'heartbeat_executed'
+  | 'team_member_invited'
+  | 'team_member_role_changed'
+  | 'integration_connected';
+
+export type AuditEventSeverity = 'info' | 'warning' | 'critical';
+
+export interface AuditEvent {
+  id: string;
+  timestamp: string;
+  eventType: AuditEventType;
+  agentId: string | null;
+  agentName: string | null;
+  actor: string;
+  description: string;
+  severity: AuditEventSeverity;
+}
+
+export interface AuditEventListResponse {
+  events: AuditEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AuditEventFilters {
+  eventType?: AuditEventType | 'all';
+  agentId?: string | 'all';
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const AUDIT_EVENT_TYPES: { value: AuditEventType; label: string }[] = [
+  { value: 'agent_created', label: 'Agent Created' },
+  { value: 'agent_paused', label: 'Agent Paused' },
+  { value: 'agent_resumed', label: 'Agent Resumed' },
+  { value: 'agent_deleted', label: 'Agent Deleted' },
+  { value: 'agent_provisioned', label: 'Agent Provisioned' },
+  { value: 'settings_changed', label: 'Settings Changed' },
+  { value: 'api_key_rotated', label: 'API Key Rotated' },
+  { value: 'channel_connected', label: 'Channel Connected' },
+  { value: 'channel_disconnected', label: 'Channel Disconnected' },
+  { value: 'heartbeat_failed', label: 'Heartbeat Failed' },
+  { value: 'heartbeat_executed', label: 'Heartbeat Executed' },
+  { value: 'team_member_invited', label: 'Team Member Invited' },
+  { value: 'team_member_role_changed', label: 'Team Member Role Changed' },
+  { value: 'integration_connected', label: 'Integration Connected' },
+];
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+export type GatewayBindMode = 'localhost' | 'lan' | 'public';
+
+export interface GatewaySettings {
+  port: number;
+  bindMode: GatewayBindMode;
+  authEnabled: boolean;
+}
+
+export interface AgentDefaults {
+  defaultModel: string;
+  sandboxEnabled: boolean;
+  compactionEnabled: boolean;
+}
+
+export interface ToolPermissions {
+  fileAccess: boolean;
+  networkAccess: boolean;
+  shellExecution: boolean;
+}
+
+export interface OpenClawSettings {
+  gateway: GatewaySettings;
+  agentDefaults: AgentDefaults;
+  toolPermissions: ToolPermissions;
+}
+
+export interface UpdateSettingsRequest {
+  gateway?: Partial<GatewaySettings>;
+  agentDefaults?: Partial<AgentDefaults>;
+  toolPermissions?: Partial<ToolPermissions>;
+}

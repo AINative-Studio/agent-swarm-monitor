@@ -3,7 +3,7 @@ import AuditLogClient from './AuditLogClient';
 
 export const metadata: Metadata = {
   title: 'Audit Log - OpenClaw',
-  description: 'View workspace activity and security events',
+  description: 'Review security audit events across your agents and workspace',
 };
 
 export default function AuditLogPage() {
