@@ -21,3 +21,16 @@ if (!Element.prototype.releasePointerCapture) {
 if (!Element.prototype.scrollIntoView) {
     Element.prototype.scrollIntoView = () => {};
 }
+
+// jsdom doesn't implement ResizeObserver, which Radix UI's Switch (and other
+// size-aware primitives) use via @radix-ui/react-use-size to measure the
+// thumb. Without this, mounting a Switch throws "ResizeObserver is not
+// defined" during the layout-effect phase.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+    class ResizeObserverPolyfill {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    }
+    globalThis.ResizeObserver = ResizeObserverPolyfill;
+}
