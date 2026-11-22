@@ -43,3 +43,11 @@ export function useMonitoringStatus() {
         refetchInterval: 30000,
     });
 }
+
+export function usePrometheusMetrics() {
+    return useQuery({
+        queryKey: ['prometheus-metrics'],
+        queryFn: () => monitoringService.getPrometheusMetrics(),
+        refetchInterval: 15000,
+    });
+}

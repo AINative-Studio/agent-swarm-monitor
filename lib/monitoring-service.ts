@@ -6,7 +6,9 @@ import type {
     AlertThresholds,
     AlertThresholdUpdate,
     MonitoringStatus,
+    PrometheusMetricsSnapshot,
 } from '@/types/monitoring';
+import { parsePrometheusMetrics, getMetricValue } from './prometheus-parser';
 
 class MonitoringService {
     async getSwarmHealth(): Promise<SwarmHealthResponse> {
@@ -35,6 +37,35 @@ class MonitoringService {
 
     async getMonitoringStatus(): Promise<MonitoringStatus> {
         return apiClient.get<MonitoringStatus>('/swarm/monitoring/status');
+    }
+
+    async getPrometheusMetrics(): Promise<PrometheusMetricsSnapshot> {
+        const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/../metrics`;
+        const response = await fetch(url.replace('/api/v1/../', '/'));
+        const text = await response.text();
+        const parsed = parsePrometheusMetrics(text);
+        const m = parsed.metrics;
+        const v = (name: string) => getMetricValue(m, name) ?? 0;
+        return {
+            taskAssignmentTotal: v('openclaw_task_assignment'),
+            taskAssignmentRejectedTotal: v('openclaw_task_assignment_rejected'),
+            taskResultSubmittedTotal: v('openclaw_task_result_submitted'),
+            taskResultDuplicateTotal: v('openclaw_task_result_duplicate'),
+            taskResultInvalidTotal: v('openclaw_task_result_invalid'),
+            taskRequeuedTotal: v('openclaw_task_requeued'),
+            leaseIssuedTotal: v('openclaw_lease_issued'),
+            leaseExpiredTotal: v('openclaw_lease_expired'),
+            leaseRevokedTotal: v('openclaw_lease_revoked'),
+            activeLeasesCount: v('openclaw_active_leases'),
+            nodeCrashDetectedTotal: v('openclaw_node_crash_detected'),
+            partitionDetectedTotal: v('openclaw_partition_detected'),
+            recoveryTriggeredTotal: v('openclaw_recovery_triggered'),
+            bufferSize: v('openclaw_buffer_size'),
+            bufferUtilizationPercent: v('openclaw_buffer_utilization_percent'),
+            partitionDegraded: v('openclaw_partition_degraded'),
+            recoveryDurationSeconds: v('openclaw_recovery_duration_seconds'),
+            buildInfo: m['openclaw_build_info'] ? { version: m['openclaw_build_info'].values[0]?.labels?.version ?? '', commit: m['openclaw_build_info'].values[0]?.labels?.commit ?? '' } : null,
+        };
     }
 }
 

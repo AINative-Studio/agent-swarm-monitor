@@ -89,6 +89,16 @@ function ChannelIcon({ icon }: { icon: string }) {
 }
 
 export default function ChannelRow({ channel, onConnect, className }: ChannelRowProps) {
+  const handleClick = () => {
+    console.log('[ChannelRow] Button clicked for channel:', channel.name, channel.id);
+    if (onConnect) {
+      console.log('[ChannelRow] Calling onConnect handler');
+      onConnect();
+    } else {
+      console.log('[ChannelRow] WARNING: onConnect is undefined!');
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -117,7 +127,7 @@ export default function ChannelRow({ channel, onConnect, className }: ChannelRow
         <Button
           variant="outline"
           size="sm"
-          onClick={onConnect}
+          onClick={handleClick}
           className="border-gray-400 text-gray-800 bg-white hover:bg-gray-50 font-medium"
         >
           {channel.connected ? 'Manage' : 'Connect'}

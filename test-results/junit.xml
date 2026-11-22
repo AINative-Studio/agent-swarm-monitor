@@ -1,0 +1,12 @@
+<testsuites id="" name="" tests="2" failures="0" skipped="2" errors="0" time="0.022035000000000308">
+<testsuite name="chat-history.spec.ts" timestamp="2026-03-03T07:38:45.476Z" hostname="chromium" tests="2" failures="0" skipped="2" time="0" errors="0">
+<testcase name="Chat History Integration › should load the page" classname="chat-history.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="Chat History Integration › placeholder test - will be replaced" classname="chat-history.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+</testsuites>
