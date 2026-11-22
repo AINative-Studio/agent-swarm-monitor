@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useMessages, useSendMessage } from '@/hooks/useMessages';
 import { useMessageStream } from '@/hooks/useMessageStream';
+import { useConversationSync } from '@/hooks/useConversationSync';
 import { StopGenerationButton } from '@/components/openclaw/StopGenerationButton';
 import { ConnectionStatusBadge } from '@/components/openclaw/ConnectionStatusBadge';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/types/openclaw';
 
@@ -57,6 +59,19 @@ export default function MessageTranscriptViewer({
         offset
     );
 
+    const queryClient = useQueryClient();
+
+    // Cross-tab sync (issue #36): when another tab sends/receives a message for this
+    // same conversation, re-fetch so this tab's transcript picks it up without a manual
+    // refresh. `broadcast` (used below, in handleSendMessage and the stream-complete
+    // effect) tells every *other* tab with this conversation open to do the same.
+    const { broadcast } = useConversationSync({
+        conversationId,
+        onEvent: () => {
+            queryClient.invalidateQueries({ queryKey: ['messages', agentId, conversationId] });
+        },
+    });
+
     // Message composer: sends via useSendMessage and optimistically appends
     // both the user's message and (once the mutation resolves) the agent's
     // reply to the local transcript, rolling the optimistic entry back on error.
@@ -96,6 +111,9 @@ export default function MessageTranscriptViewer({
                         tokensUsed: response.tokensUsed,
                     };
                     setAllMessages((prev) => [...prev, replyMessage]);
+                    // Let other tabs with this conversation open know a new message
+                    // landed, so they refetch instead of showing a stale transcript.
+                    broadcast({ type: 'message_added', conversationId, messageId: replyMessage.id });
                 },
                 onError: () => {
                     // Roll back the optimistic user message on failure.
@@ -103,7 +121,7 @@ export default function MessageTranscriptViewer({
                 },
             }
         );
-    }, [composerValue, sendMessage, agentId, conversationId]);
+    }, [composerValue, sendMessage, agentId, conversationId, broadcast]);
 
     const handleComposerKeyDown = useCallback(
         (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -160,6 +178,20 @@ export default function MessageTranscriptViewer({
             scrollToBottom();
         }
     }, [streamingMessage, scrollToBottom]);
+
+    // When a streamed assistant response finishes, refetch so the completed message
+    // is persisted into the transcript, and let other tabs with this conversation
+    // open know to refetch too (cross-tab sync, issue #36).
+    useEffect(() => {
+        if (streamingMessage?.isComplete) {
+            queryClient.invalidateQueries({ queryKey: ['messages', agentId, conversationId] });
+            broadcast({
+                type: 'message_added',
+                conversationId,
+                messageId: streamingMessage.messageId,
+            });
+        }
+    }, [streamingMessage, queryClient, agentId, conversationId, broadcast]);
 
     // Jump to a specific message (e.g. from a semantic search "jump to conversation"
     // result click) once it's present in the loaded transcript, and briefly highlight it.

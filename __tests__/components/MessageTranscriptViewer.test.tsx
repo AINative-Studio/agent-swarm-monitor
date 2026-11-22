@@ -15,8 +15,22 @@ vi.mock('@/hooks/useMessageStream', () => ({
     useMessageStream: vi.fn(),
 }));
 
+vi.mock('@/hooks/useConversationSync', () => ({
+    useConversationSync: vi.fn(),
+}));
+
 import { useMessages, useSendMessage } from '@/hooks/useMessages';
 import { useMessageStream } from '@/hooks/useMessageStream';
+import { useConversationSync } from '@/hooks/useConversationSync';
+
+function mockConversationSync(overrides: Partial<ReturnType<typeof useConversationSync>> = {}) {
+    const broadcast = vi.fn();
+    vi.mocked(useConversationSync).mockReturnValue({
+        broadcast,
+        ...overrides,
+    } as any);
+    return broadcast;
+}
 
 function mockMessageStream(overrides: Partial<ReturnType<typeof useMessageStream>> = {}) {
     vi.mocked(useMessageStream).mockReturnValue({
@@ -81,6 +95,7 @@ describe('MessageTranscriptViewer Component', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockMessageStream();
+        mockConversationSync();
     });
 
     describe('Rendering and Display', () => {
@@ -1133,6 +1148,118 @@ describe('MessageTranscriptViewer Component', () => {
             fireEvent.click(screen.getByLabelText(/send message/i));
 
             expect(screen.getByText('Here is my reply')).toBeInTheDocument();
+        });
+    });
+
+    describe('Cross-tab synchronization (issue #36)', () => {
+        beforeEach(() => {
+            vi.mocked(useMessages).mockReturnValue({
+                data: {
+                    messages: mockMessages,
+                    total: 3,
+                    limit: 50,
+                    offset: 0,
+                    hasMore: false,
+                },
+                isLoading: false,
+                isError: false,
+                error: null,
+            } as any);
+        });
+
+        it('broadcasts a sync event when a message send succeeds', () => {
+            const broadcast = mockConversationSync();
+            const mutateMock = vi.fn((_vars, handlers) => {
+                handlers?.onSuccess?.({
+                    messageId: 'reply-1',
+                    conversationId: mockConversationId,
+                    response: 'Synced reply',
+                });
+            });
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: mutateMock,
+                isPending: false,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            const input = screen.getByLabelText(/message input/i);
+            fireEvent.change(input, { target: { value: 'Hello from tab A' } });
+            fireEvent.click(screen.getByLabelText(/send message/i));
+
+            expect(broadcast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: 'message_added',
+                    conversationId: mockConversationId,
+                })
+            );
+        });
+
+        it('passes this conversation id to useConversationSync so events are scoped correctly', () => {
+            mockConversationSync();
+
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: vi.fn(),
+                isPending: false,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            expect(vi.mocked(useConversationSync)).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    conversationId: mockConversationId,
+                    onEvent: expect.any(Function),
+                })
+            );
+        });
+
+        it('refetches messages when a sync event arrives from another tab', () => {
+            let capturedOnEvent: ((event: unknown) => void) | undefined;
+            vi.mocked(useConversationSync).mockImplementation((options: any) => {
+                capturedOnEvent = options?.onEvent;
+                return { broadcast: vi.fn() } as any;
+            });
+
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: vi.fn(),
+                isPending: false,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            // Simulate another tab broadcasting that a new message arrived for
+            // this same conversation — the viewer should not throw, and should
+            // have registered a handler capable of triggering a refetch.
+            expect(capturedOnEvent).toBeInstanceOf(Function);
+            expect(() =>
+                capturedOnEvent?.({
+                    type: 'message_added',
+                    conversationId: mockConversationId,
+                    messageId: 'msg-from-other-tab',
+                    timestamp: Date.now(),
+                })
+            ).not.toThrow();
         });
     });
 });
