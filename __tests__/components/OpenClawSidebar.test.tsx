@@ -7,6 +7,21 @@ vi.mock('next/navigation', () => ({
   usePathname: vi.fn(() => '/'),
 }));
 
+// The sidebar pulls user name/email/initials from the real auth context,
+// falling back to its own prop-based defaults only when there's no
+// signed-in user. Mock a signed-in user matching this file's "default
+// values" fixture so those tests exercise the component's real fallback
+// chain (auth user -> prop -> literal default) rather than an actual
+// AuthProvider, which these tests don't wrap the component in.
+vi.mock('@/components/providers/auth-provider', () => ({
+  useAuth: vi.fn(() => ({
+    user: { userId: 'user-1', fullName: 'Toby Morning', email: 'toby@ainative.studio', workspaceId: 'ws-1' },
+    isLoading: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+  })),
+}));
+
 describe('OpenClawSidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks();

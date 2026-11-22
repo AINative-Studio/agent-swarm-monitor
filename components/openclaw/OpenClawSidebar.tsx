@@ -18,8 +18,11 @@ import {
   ChevronDown,
   Check,
   Plus,
+  LogOut,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/components/providers/auth-provider';
 
 interface NavItem {
   name: string;
@@ -36,6 +39,7 @@ const navItems: NavItem[] = [
   { name: 'Channels', href: '/channels', icon: Phone },
   { name: 'Audit Log', href: '/audit-log', icon: Clock },
   { name: 'Monitoring', href: '/monitoring', icon: Activity },
+  { name: 'Recursive Intelligence', href: '/recursive-intelligence', icon: RefreshCw },
   { name: 'Team', href: '/team', icon: Users },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
@@ -46,7 +50,7 @@ interface Workspace {
   slug: string;
 }
 
-const STUB_WORKSPACES: Organization[] = [
+const STUB_WORKSPACES: Workspace[] = [
   { id: 'workspace_1', name: 'AINative Studio', slug: 'ainative-studio' },
   { id: 'workspace_2', name: 'AgentClaw Labs', slug: 'agentclaw-labs' },
   { id: 'workspace_3', name: 'Personal', slug: 'personal' },
@@ -60,19 +64,23 @@ interface OpenClawSidebarProps {
 }
 
 export default function OpenClawSidebar({
-  userName = 'Toby Morning',
-  userEmail = 'toby@ainative.studio',
-  userInitials = 'TM',
+  userName: propUserName,
+  userEmail: propUserEmail,
+  userInitials: propUserInitials,
   className,
 }: OpenClawSidebarProps) {
   const pathname = usePathname();
-  const [activeWorkspace, setActiveOrg] = useState<Organization>(STUB_WORKSPACES[0]);
-  const [workspacePickerOpen, setOrgPickerOpen] = useState(false);
+  const { user, logout } = useAuth();
+  const userName = user?.fullName || propUserName || 'User';
+  const userEmail = user?.email || propUserEmail || '';
+  const userInitials = propUserInitials || userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+  const [activeWorkspace, setActiveWorkspace] = useState<Workspace>(STUB_WORKSPACES[0]);
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const workspacePickerRef = useRef<HTMLDivElement>(null);
 
   const handleClickOutside = useCallback((e: MouseEvent) => {
     if (workspacePickerRef.current && !workspacePickerRef.current.contains(e.target as Node)) {
-      setOrgPickerOpen(false);
+      setWorkspacePickerOpen(false);
     }
   }, []);
 
@@ -103,7 +111,7 @@ export default function OpenClawSidebar({
       <div className="relative px-2 pt-4 pb-4" ref={workspacePickerRef}>
         <button
           type="button"
-          onClick={() => setOrgPickerOpen((prev) => !prev)}
+          onClick={() => setWorkspacePickerOpen((prev) => !prev)}
           className={cn(
             'flex items-center gap-2 w-full px-2 py-2 rounded-lg text-left transition-colors',
             'hover:bg-[#F0EFEC]',
@@ -175,8 +183,8 @@ export default function OpenClawSidebar({
                 role="option"
                 aria-selected={workspace.id === activeWorkspace.id}
                 onClick={() => {
-                  setActiveOrg(workspace);
-                  setOrgPickerOpen(false);
+                  setActiveWorkspace(workspace);
+                  setWorkspacePickerOpen(false);
                 }}
                 className={cn(
                   'flex items-center gap-2 w-full px-3 py-2 text-sm text-left transition-colors',
@@ -196,7 +204,7 @@ export default function OpenClawSidebar({
             <div className="border-t border-[#EEECEA] mt-1 pt-1">
               <button
                 type="button"
-                onClick={() => setOrgPickerOpen(false)}
+                onClick={() => setWorkspacePickerOpen(false)}
                 className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[#6B6B6B] hover:bg-[#F5F4F1] hover:text-gray-900 transition-colors"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -251,10 +259,18 @@ export default function OpenClawSidebar({
           >
             {userInitials}
           </div>
-          <div className="min-w-0">
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-900 truncate">{userName}</p>
             <p className="text-xs text-[#8C8C8C] truncate">{userEmail}</p>
           </div>
+          <button
+            onClick={logout}
+            className="p-1.5 text-[#8C8C8C] hover:text-gray-900 hover:bg-[#F0EFEC] rounded-md transition-colors"
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </aside>

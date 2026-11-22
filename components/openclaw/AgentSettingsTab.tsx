@@ -481,44 +481,6 @@ export default function AgentSettingsTab({
     [handleSubmitFixPrompt]
   );
 
-  // Handle fix prompt submission
-  const handleSubmitFixPrompt = useCallback(async () => {
-    if (!fixPrompt.trim()) return;
-
-    setIsSendingFixPrompt(true);
-    try {
-      await openClawService.sendMessage(agent.id, {
-        message: `[FIX PROMPT] ${fixPrompt}`,
-      });
-
-      toast({
-        title: 'Fix Prompt Sent',
-        description: 'Your fix prompt has been sent to the agent',
-      });
-
-      setFixPrompt(''); // Clear input after successful send
-    } catch (error) {
-      toast({
-        title: 'Failed to Send Fix Prompt',
-        description: error instanceof Error ? error.message : 'An error occurred',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSendingFixPrompt(false);
-    }
-  }, [agent.id, fixPrompt, toast]);
-
-  // Handle Enter key for fix prompt submission
-  const handleFixPromptKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        handleSubmitFixPrompt();
-      }
-    },
-    [handleSubmitFixPrompt]
-  );
-
   return (
     <div className="space-y-8 max-w-3xl">
       {/* Agent Name + Model row */}
@@ -806,6 +768,10 @@ export default function AgentSettingsTab({
             className="border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
           >
             <Play className="h-3.5 w-3.5 mr-1.5" />
+            Run Heartbeat
+          </Button>
+        </div>
+
         {/* Add Fix Prompt */}
         <div className="py-2">
           <div className="flex items-center justify-between mb-2">
