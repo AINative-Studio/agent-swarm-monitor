@@ -450,7 +450,8 @@ export default function AgentSettingsTab({
 
     setIsSendingFixPrompt(true);
     try {
-      await openClawService.sendMessage(agent.id, {
+      await openClawService.sendMessage({
+        agentId: agent.id,
         message: `[FIX PROMPT] ${fixPrompt}`,
       });
 

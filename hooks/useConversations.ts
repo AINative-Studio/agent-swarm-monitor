@@ -26,24 +26,22 @@ export const conversationKeys = {
 };
 
 /**
- * Hook to fetch conversations for an agent
+ * Hook to fetch conversations. Pass an agentId to scope to a single agent,
+ * or omit it to fetch conversations across all agents.
  */
 export function useConversations(
   agentId: string | undefined,
   options?: { limit?: number; offset?: number }
 ) {
   return useQuery({
-    queryKey: conversationKeys.list(agentId || 'null'),
-    queryFn: () => {
-      if (!agentId) throw new Error('No agent ID provided');
-      return conversationService.listConversations(
+    queryKey: conversationKeys.list(agentId || 'all'),
+    queryFn: () =>
+      conversationService.listConversations(
         agentId,
         options?.limit,
         options?.offset
-      );
-    },
+      ),
     refetchInterval: 10000, // Poll every 10 seconds
-    enabled: !!agentId,
   });
 }
 

@@ -472,15 +472,16 @@ describe('Chat History Integration Tests', () => {
       expect(result.current.data?.messages).toHaveLength(0);
     });
 
-    it('should not fetch when agentId is undefined', () => {
+    it('should fetch conversations across all agents when agentId is undefined', async () => {
       const mockService = vi.mocked(conversationService);
+      mockService.listConversations.mockResolvedValue(mockConversationListResponse);
 
       const { result } = renderHook(() => useConversations(undefined), {
         wrapper: createWrapper(queryClient),
       });
 
-      expect(result.current.status).toBe('pending');
-      expect(mockService.listConversations).not.toHaveBeenCalled();
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(mockService.listConversations).toHaveBeenCalledWith(undefined, undefined, undefined);
     });
 
     it('should not fetch when conversationId is null', () => {

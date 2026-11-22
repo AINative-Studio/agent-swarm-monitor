@@ -17,6 +17,7 @@ import type {
   SearchMessage,
   SearchFilters,
   SearchMessagesResponse,
+  SearchMessagesOptions,
 } from '@/types/conversation';
 import apiClient from './api-client';
 
@@ -113,18 +114,29 @@ class ConversationService {
   }
 
   /**
-   * Search messages across all conversations with filters
+   * Search messages across all conversations with filters.
+   *
+   * Shaped to match the eventual backend endpoint `GET /conversations/search?q=&semantic=`
+   * (see issue #35). `options.semantic` toggles between semantic (natural-language /
+   * embedding-based) search and plain keyword search — surfaced in the UI as the
+   * "Semantic Search" switch in SemanticSearchUI.
+   *
    * @param query - Search query string
    * @param filters - Optional filters (agent, date range, etc.)
+   * @param options - Search mode options (semantic vs keyword)
    * @returns Search results with highlighted content and relevance scores
    */
   async searchMessages(
     query: string,
-    filters?: SearchFilters
+    filters?: SearchFilters,
+    options?: SearchMessagesOptions
   ): Promise<SearchMessagesResponse> {
+    const semantic = options?.semantic ?? true;
+
     // TODO: Replace with real API call when backend endpoint is ready
     // const params = new URLSearchParams();
-    // params.append('query', query);
+    // params.append('q', query);
+    // params.append('semantic', String(semantic));
     // if (filters?.agentId) params.append('agentId', filters.agentId);
     // if (filters?.dateFrom) params.append('dateFrom', filters.dateFrom);
     // if (filters?.dateTo) params.append('dateTo', filters.dateTo);
@@ -133,7 +145,10 @@ class ConversationService {
     //
     // return apiClient.get<SearchMessagesResponse>(`${this.basePath}/search`, Object.fromEntries(params));
 
-    // Mock implementation for testing
+    // Mock implementation for testing. Keyword mode additionally requires an exact
+    // (case-insensitive) substring match, approximating the real difference between
+    // semantic (similarity-based) and keyword (literal) search — semantic mode returns
+    // the same curated mock matches regardless of exact phrasing.
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     const mockResults: SearchMessage[] = [];
@@ -195,6 +210,15 @@ class ConversationService {
 
     // Apply filters
     let filteredResults = mockResults;
+
+    if (!semantic) {
+      // Keyword mode: require a literal (case-insensitive) substring match of the full
+      // query against message content, rather than the broader topic-based matching
+      // used above to simulate semantic/similarity search.
+      filteredResults = filteredResults.filter((r) =>
+        r.content.toLowerCase().includes(lowerQuery)
+      );
+    }
 
     if (filters?.agentId) {
       filteredResults = filteredResults.filter((r) => r.agentName === filters.agentId);

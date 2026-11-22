@@ -38,6 +38,42 @@ export interface OpenClawAgentListResponse {
   offset: number;
 }
 
+/**
+ * Chat message transcript types (MessageTranscriptViewer / useMessages)
+ */
+export interface Message {
+  id: string;
+  conversationId: string;
+  agentId: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  model?: string;
+  tokensUsed?: number;
+}
+
+export interface MessageListResponse {
+  messages: Message[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface SendMessageRequest {
+  agentId: string;
+  conversationId?: string;
+  message: string;
+}
+
+export interface SendMessageResponse {
+  messageId: string;
+  conversationId: string;
+  response: string;
+  model?: string;
+  tokensUsed?: number;
+}
+
 export interface CreateAgentRequest {
   name: string;
   persona?: string;
@@ -305,4 +341,64 @@ export interface UpdateSettingsRequest {
   gateway?: Partial<GatewaySettings>;
   agentDefaults?: Partial<AgentDefaults>;
   toolPermissions?: Partial<ToolPermissions>;
+}
+
+/**
+ * Real-time message streaming (useMessageStream / ConnectionStatusBadge)
+ */
+export type ConnectionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'disconnected'
+  | 'error';
+
+export interface StreamingMessage {
+  messageId: string;
+  content: string;
+  isComplete: boolean;
+  timestamp?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface WebSocketMessage {
+  type: 'message_chunk' | 'message_complete' | 'thinking' | 'error' | 'ping' | 'pong' | 'stop_ack';
+  conversationId?: string;
+  messageId?: string;
+  chunk?: string;
+  content?: string;
+  isComplete?: boolean;
+  timestamp?: string;
+  error?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MessageChunkEvent {
+  messageId: string;
+  chunk?: string;
+  isComplete: boolean;
+}
+
+export interface MessageCompleteEvent {
+  messageId: string;
+  content: string;
+}
+
+export interface MessageStreamConfig {
+  conversationId: string;
+  agentId: string;
+  /** Automatically open the WebSocket connection on mount (default true) */
+  autoConnect?: boolean;
+  /** Automatically attempt to reconnect with exponential backoff when the connection drops (default true) */
+  autoReconnect?: boolean;
+  /** Maximum number of reconnect attempts before giving up (default 5) */
+  maxReconnectAttempts?: number;
+  /** Base delay in ms for exponential backoff reconnects (default 1000) */
+  reconnectDelay?: number;
+  /** Maximum delay in ms between reconnect attempts, caps the exponential backoff (default 30000) */
+  maxReconnectDelay?: number;
+  onMessageChunk?: (event: MessageChunkEvent) => void;
+  onMessageComplete?: (event: MessageCompleteEvent) => void;
+  onConnectionChange?: (status: ConnectionStatus) => void;
+  onError?: (error: Error) => void;
 }

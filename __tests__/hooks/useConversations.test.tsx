@@ -84,13 +84,47 @@ describe('Conversation Hooks', () => {
       expect(result.current.data?.conversations[0].id).toBe('conv-1');
     });
 
-    it('should not fetch when agentId is undefined', () => {
+    it('should fetch conversations across all agents when agentId is undefined', async () => {
+      const mockResponse = {
+        conversations: [
+          {
+            id: 'conv-1',
+            agentId: 'agent-1',
+            title: 'Test Conversation',
+            createdAt: '2024-03-08T10:00:00Z',
+            updatedAt: '2024-03-08T10:30:00Z',
+            messageCount: 5,
+            lastMessageAt: '2024-03-08T10:30:00Z',
+          },
+          {
+            id: 'conv-2',
+            agentId: 'agent-2',
+            title: 'Another Agent Conversation',
+            createdAt: '2024-03-08T09:00:00Z',
+            updatedAt: '2024-03-08T09:30:00Z',
+            messageCount: 2,
+            lastMessageAt: '2024-03-08T09:30:00Z',
+          },
+        ],
+        total: 2,
+        limit: 50,
+        offset: 0,
+      };
+
+      vi.mocked(conversationService.listConversations).mockResolvedValue(mockResponse);
+
       const { result } = renderHook(() => useConversations(undefined), {
         wrapper: createWrapper(),
       });
 
-      expect(result.current.isLoading).toBe(false);
-      expect(conversationService.listConversations).not.toHaveBeenCalled();
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(conversationService.listConversations).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        undefined
+      );
+      expect(result.current.data?.conversations).toHaveLength(2);
     });
   });
 

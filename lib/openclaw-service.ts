@@ -3,6 +3,9 @@ import type {
   OpenClawAgentListResponse,
   CreateAgentRequest,
   UpdateAgentSettingsRequest,
+  MessageListResponse,
+  SendMessageRequest,
+  SendMessageResponse,
 } from '@/types/openclaw';
 import apiClient from './api-client';
 
@@ -56,8 +59,27 @@ class OpenClawService {
         );
     }
 
-    async sendMessage(agentId: string, data: { message: string }): Promise<any> {
-        return apiClient.post(`${this.basePath}/${agentId}/message`, data);
+    async sendMessage(data: SendMessageRequest): Promise<SendMessageResponse> {
+        return apiClient.post<SendMessageResponse>(`${this.basePath}/${data.agentId}/message`, data);
+    }
+
+    /**
+     * Fetch a paginated page of messages for a conversation with an agent
+     */
+    async getMessages(
+        agentId: string,
+        conversationId: string,
+        limit: number = 50,
+        offset: number = 0
+    ): Promise<MessageListResponse> {
+        const params: Record<string, string> = {
+            limit: String(limit),
+            offset: String(offset),
+        };
+        return apiClient.get<MessageListResponse>(
+            `${this.basePath}/${agentId}/conversations/${conversationId}/messages`,
+            params
+        );
     }
 
     async getSkills(): Promise<any> {
@@ -139,4 +161,6 @@ class OpenClawService {
 }
 
 const openClawService = new OpenClawService();
+// Named export (in addition to the default) so hooks/tests can import either way.
+export const openclawService = openClawService;
 export default openClawService;
