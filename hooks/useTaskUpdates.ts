@@ -6,7 +6,7 @@
  * with automatic reconnection, deduplication, and polling fallback.
  */
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 
 export interface TaskUpdate {
     taskId: string;
@@ -41,7 +41,23 @@ export function useTaskUpdates(
     taskIds: string[],
     options: UseTaskUpdatesOptions = {}
 ): UseTaskUpdatesReturn {
-    const opts = { ...DEFAULT_OPTIONS, ...options };
+    // `{ ...DEFAULT_OPTIONS, ...options }` was a fresh object every render,
+    // which made handleMessage/connect (both depend on opts) unstable,
+    // which made the mount effect's cleanup+effect re-run every render --
+    // closing and immediately reopening the WebSocket in a tight loop, so
+    // isConnected never stayed true long enough to observe. Memoize on the
+    // actual primitive values (and the onUpdate reference) instead of the
+    // options object's identity.
+    const opts = useMemo(
+        () => ({ ...DEFAULT_OPTIONS, ...options }),
+        [
+            options.deduplicateWindow,
+            options.pollingInterval,
+            options.maxReconnectAttempts,
+            options.batchDelay,
+            options.onUpdate,
+        ]
+    );
 
     const [isConnected, setIsConnected] = useState(false);
     const [updates, setUpdates] = useState<TaskUpdate[]>([]);
@@ -53,6 +69,15 @@ export function useTaskUpdates(
     const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastUpdateTimestampRef = useRef<Record<string, number>>({});
     const subscriptionBatchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // A caller passing an inline array literal (e.g. useTaskUpdates([id]))
+    // creates a new taskIds reference every render. Depending on that
+    // reference directly in connect()'s useCallback (and the mount effect
+    // below) made the WebSocket connect-then-immediately-disconnect on every
+    // render, since React re-ran the mount effect's cleanup whenever connect
+    // changed identity -- the connection never stayed open long enough for
+    // onopen to fire. Depend on the content instead of the reference.
+    const taskIdsKey = taskIds.join(',');
 
     // Get WebSocket URL with auth token
     const getWebSocketURL = useCallback(() => {
@@ -174,12 +199,28 @@ export function useTaskUpdates(
             console.error('Failed to create WebSocket:', err);
             setError(err as Error);
 
-            // Fallback to polling immediately if WebSocket is unavailable
-            if (reconnectAttemptsRef.current >= opts.maxReconnectAttempts) {
+            // A synchronously-throwing WebSocket constructor never reaches
+            // the ws.onclose handler above, so reconnectAttemptsRef was
+            // never incremented here -- this check always read its initial
+            // value of 0, meaning a persistently-unavailable WebSocket
+            // (e.g. no WebSocket support, or a sync connection-refused)
+            // could never actually reach opts.maxReconnectAttempts and fall
+            // back to polling; it just failed once and did nothing further.
+            // Mirror onclose's retry/count logic here too.
+            if (reconnectAttemptsRef.current < opts.maxReconnectAttempts) {
+                reconnectAttemptsRef.current++;
+                const delay = getReconnectDelay();
+                console.log(`Retrying WebSocket creation in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${opts.maxReconnectAttempts})`);
+
+                reconnectTimeoutRef.current = setTimeout(() => {
+                    connect();
+                }, delay);
+            } else {
+                console.warn('Max reconnect attempts reached, falling back to polling');
                 setUseFallbackPolling(true);
             }
         }
-    }, [taskIds, getWebSocketURL, handleMessage, subscribeToTasks, opts.maxReconnectAttempts, getReconnectDelay]);
+    }, [taskIdsKey, getWebSocketURL, handleMessage, subscribeToTasks, opts.maxReconnectAttempts, getReconnectDelay]);
 
     // Disconnect WebSocket
     const disconnect = useCallback(() => {
@@ -201,7 +242,7 @@ export function useTaskUpdates(
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && taskIds.length > 0) {
             subscribeToTasks(wsRef.current, taskIds);
         }
-    }, [taskIds, subscribeToTasks]);
+    }, [taskIdsKey, subscribeToTasks]);
 
     // Connect on mount, disconnect on unmount
     useEffect(() => {
@@ -239,7 +280,7 @@ export function useTaskUpdates(
 
         const interval = setInterval(pollTasks, opts.pollingInterval);
         return () => clearInterval(interval);
-    }, [useFallbackPolling, taskIds, opts.pollingInterval]);
+    }, [useFallbackPolling, taskIdsKey, opts.pollingInterval]);
 
     return {
         isConnected,

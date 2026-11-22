@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -10,15 +11,37 @@ interface TaskFiltersProps {
     onFiltersChange: (filters: TaskQueueFilters) => void;
 }
 
+const SEARCH_DEBOUNCE_MS = 300;
+
 export default function TaskFilters({ filters, onFiltersChange }: TaskFiltersProps) {
+    const [taskTypeInput, setTaskTypeInput] = useState(filters.taskType || '');
+
+    // Debounce the free-text search so each keystroke doesn't trigger a
+    // fresh task-queue fetch -- only fire onFiltersChange once typing
+    // pauses for SEARCH_DEBOUNCE_MS.
+    useEffect(() => {
+        const handle = setTimeout(() => {
+            if (taskTypeInput !== (filters.taskType || '')) {
+                onFiltersChange({
+                    ...filters,
+                    taskType: taskTypeInput || undefined,
+                    offset: 0,
+                });
+            }
+        }, SEARCH_DEBOUNCE_MS);
+        return () => clearTimeout(handle);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [taskTypeInput]);
+
     const handleReset = () => {
+        setTaskTypeInput('');
         onFiltersChange({ limit: 50, offset: 0 });
     };
 
     return (
         <div className="flex flex-wrap gap-3 p-4 bg-gray-50 rounded-lg border border-[#E8E6E1]">
             <div className="flex-1 min-w-[200px]">
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">Status</label>
+                <label htmlFor="status-filter" className="block text-xs font-medium text-gray-700 mb-1.5">Status</label>
                 <Select
                     value={filters.status || 'all'}
                     onValueChange={(value) =>
@@ -29,7 +52,7 @@ export default function TaskFilters({ filters, onFiltersChange }: TaskFiltersPro
                         })
                     }
                 >
-                    <SelectTrigger className="bg-white">
+                    <SelectTrigger id="status-filter" aria-label="Status" className="bg-white">
                         <SelectValue placeholder="All statuses" />
                     </SelectTrigger>
                     <SelectContent>
@@ -46,7 +69,7 @@ export default function TaskFilters({ filters, onFiltersChange }: TaskFiltersPro
             </div>
 
             <div className="flex-1 min-w-[200px]">
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">Priority</label>
+                <label htmlFor="priority-filter" className="block text-xs font-medium text-gray-700 mb-1.5">Priority</label>
                 <Select
                     value={filters.priority || 'all'}
                     onValueChange={(value) =>
@@ -57,7 +80,7 @@ export default function TaskFilters({ filters, onFiltersChange }: TaskFiltersPro
                         })
                     }
                 >
-                    <SelectTrigger className="bg-white">
+                    <SelectTrigger id="priority-filter" aria-label="Priority" className="bg-white">
                         <SelectValue placeholder="All priorities" />
                     </SelectTrigger>
                     <SelectContent>
@@ -87,17 +110,12 @@ export default function TaskFilters({ filters, onFiltersChange }: TaskFiltersPro
             </div>
 
             <div className="flex-1 min-w-[200px]">
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">Task Type</label>
+                <label htmlFor="task-type-search" className="block text-xs font-medium text-gray-700 mb-1.5">Search Tasks</label>
                 <Input
-                    placeholder="Filter by task type..."
-                    value={filters.taskType || ''}
-                    onChange={(e) =>
-                        onFiltersChange({
-                            ...filters,
-                            taskType: e.target.value || undefined,
-                            offset: 0,
-                        })
-                    }
+                    id="task-type-search"
+                    placeholder="Search tasks by type..."
+                    value={taskTypeInput}
+                    onChange={(e) => setTaskTypeInput(e.target.value)}
                     className="bg-white"
                 />
             </div>

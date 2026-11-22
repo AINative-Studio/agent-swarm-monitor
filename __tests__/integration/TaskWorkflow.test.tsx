@@ -14,6 +14,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import TasksClient from '@/app/tasks/TasksClient';
+import type { Task } from '@/types/tasks';
 
 // Mock services
 vi.mock('@/lib/task-service', () => ({
@@ -35,7 +36,7 @@ vi.mock('@/hooks/useTaskUpdates', () => ({
     })),
 }));
 
-const mockTasks = [
+const mockTasks: Task[] = [
     {
         id: 'task-1',
         taskId: 'task-1',
@@ -102,6 +103,10 @@ const createWrapper = () => {
 describe('Task Management Workflow Integration', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // TasksClient persists its filters to sessionStorage so they
+        // survive a real navigation -- clear it between tests so one
+        // test's filter choices don't leak into the next.
+        window.sessionStorage.clear();
     });
 
     describe('Complete Task Lifecycle', () => {
@@ -129,7 +134,7 @@ describe('Task Management Workflow Integration', () => {
                 assignedPeerId: 'peer-1',
             });
 
-            render(<TasksClient />, { wrapper: createWrapper() });
+            const { rerender } = render(<TasksClient />, { wrapper: createWrapper() });
 
             // Wait for initial load
             await waitFor(() => {
@@ -145,14 +150,19 @@ describe('Task Management Workflow Integration', () => {
             });
 
             await user.type(screen.getByLabelText(/task type/i), 'api_request');
-            await user.type(screen.getByLabelText(/payload/i), '{"url": "https://api.example.com"}');
-            await user.click(screen.getByRole('button', { name: /create task/i }));
-
-            await waitFor(() => {
-                expect(taskService.default.createTask).toHaveBeenCalled();
-            });
-
-            // Step 2: View task in list (assuming refresh)
+            // The payload textarea defaults to '{}', so clear it first.
+            // user-event's type() parses `{` as the opener of special-key
+            // syntax (e.g. `{enter}`), so a literal `{` must be escaped
+            // via `{{`; a bare `}` needs no escaping.
+            const payloadField = screen.getByLabelText(/payload/i);
+            await user.clear(payloadField);
+            await user.type(payloadField, '{{"url": "https://api.example.com"}');
+            // Creating the task invalidates the task-queue query, which
+            // immediately refetches -- that refetch can resolve before
+            // this test body gets a chance to reassign the mock below, so
+            // the updated response is queued up *before* clicking Create
+            // rather than after, guaranteeing whichever call the
+            // invalidation triggers gets the task-new row.
             vi.mocked(taskService.default.getTaskQueue).mockResolvedValue({
                 tasks: [...mockTasks, {
                     ...mockTasks[0],
@@ -165,8 +175,15 @@ describe('Task Management Workflow Integration', () => {
                 offset: 0,
             });
 
-            // Step 3: Assign task
-            const taskRow = screen.getByTestId('task-row-task-new');
+            await user.click(screen.getByRole('button', { name: /create task/i }));
+
+            await waitFor(() => {
+                expect(taskService.default.createTask).toHaveBeenCalled();
+            });
+
+            // Step 2 & 3: View task in list (post-create refetch), then
+            // assign it to a peer.
+            const taskRow = await waitFor(() => screen.getByTestId('task-row-task-new'), { timeout: 3000 });
             const assignButton = within(taskRow).getByRole('button', { name: /assign/i });
             await user.click(assignButton);
 
@@ -182,7 +199,11 @@ describe('Task Management Workflow Integration', () => {
                 expect(taskService.default.assignTask).toHaveBeenCalledWith('task-new', 'peer-1');
             });
 
-            // Step 4: Monitor real-time status update
+            // Step 4: Monitor real-time status update. Changing what a
+            // mocked hook returns doesn't by itself make the consuming
+            // component re-render -- React only re-invokes it on a
+            // state/props change, so force one via rerender() after
+            // updating the mock.
             const { useTaskUpdates } = await import('@/hooks/useTaskUpdates');
             vi.mocked(useTaskUpdates).mockReturnValue({
                 isConnected: true,
@@ -196,6 +217,7 @@ describe('Task Management Workflow Integration', () => {
                 error: null,
                 useFallbackPolling: false,
             });
+            rerender(<TasksClient />);
 
             // Task status should update
             await waitFor(() => {
@@ -208,11 +230,11 @@ describe('Task Management Workflow Integration', () => {
             const user = userEvent.setup();
             const taskService = await import('@/lib/task-service');
 
-            const multipleTasks = Array.from({ length: 5 }, (_, i) => ({
+            const multipleTasks: Task[] = Array.from({ length: 5 }, (_, i) => ({
                 ...mockTasks[0],
                 id: `task-${i}`,
                 taskId: `task-${i}`,
-                priority: i % 2 === 0 ? 'HIGH' : 'NORMAL',
+                priority: i % 2 === 0 ? 'HIGH' : 'NORMAL' as const,
             }));
 
             vi.mocked(taskService.default.getTaskQueue).mockResolvedValue({
@@ -268,8 +290,11 @@ describe('Task Management Workflow Integration', () => {
             const createButton = screen.getByRole('button', { name: /create task/i });
             await user.click(createButton);
 
+            // The payload textarea already defaults to '{}', so no need
+            // to type it (and user-event's type() can't take a literal
+            // '{}' as plain text anyway -- it parses braces as
+            // special-key syntax).
             await user.type(screen.getByLabelText(/task type/i), 'test');
-            await user.type(screen.getByLabelText(/payload/i), '{}');
             await user.click(screen.getByRole('button', { name: /create task/i }));
 
             // Should show error
@@ -414,7 +439,7 @@ describe('Task Management Workflow Integration', () => {
         it('should optimize re-renders with virtualization for large lists', async () => {
             const taskService = await import('@/lib/task-service');
 
-            const largTaskList = Array.from({ length: 100 }, (_, i) => ({
+            const largeTaskList = Array.from({ length: 100 }, (_, i) => ({
                 ...mockTasks[0],
                 id: `task-${i}`,
                 taskId: `task-${i}`,
@@ -460,10 +485,12 @@ describe('Task Management Workflow Integration', () => {
                 expect(screen.getByText(/task-1/i)).toBeInTheDocument();
             });
 
-            // Create task
+            // Create task. The payload textarea already defaults to '{}',
+            // so no need to type it (and user-event's type() can't take a
+            // literal '{}' as plain text anyway -- it parses braces as
+            // special-key syntax).
             await user.click(screen.getByRole('button', { name: /create task/i }));
             await user.type(screen.getByLabelText(/task type/i), 'test');
-            await user.type(screen.getByLabelText(/payload/i), '{}');
             await user.click(screen.getByRole('button', { name: /create task/i }));
 
             // Should show success toast
@@ -484,7 +511,7 @@ describe('Task Management Workflow Integration', () => {
             });
             vi.mocked(taskService.default.getTaskStats).mockResolvedValue(mockStats);
 
-            const { unmount, rerender } = render(<TasksClient />, { wrapper: createWrapper() });
+            const { unmount } = render(<TasksClient />, { wrapper: createWrapper() });
 
             await waitFor(() => {
                 expect(screen.getByText(/task-1/i)).toBeInTheDocument();
@@ -500,9 +527,12 @@ describe('Task Management Workflow Integration', () => {
                 expect.objectContaining({ status: 'QUEUED' })
             );
 
-            // Simulate navigation away and back
+            // Simulate navigation away and back. rerender() targets the
+            // same root that unmount() just tore down, so it can't be
+            // used here -- render a fresh instance instead, the way an
+            // actual route navigation would.
             unmount();
-            rerender(<TasksClient />);
+            render(<TasksClient />, { wrapper: createWrapper() });
 
             await waitFor(() => {
                 const statusFilterAgain = screen.getByLabelText(/status/i);

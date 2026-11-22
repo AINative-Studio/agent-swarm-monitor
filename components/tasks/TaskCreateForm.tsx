@@ -132,8 +132,7 @@ export default function TaskCreateForm({ onSuccess }: TaskCreateFormProps) {
         setSubmitError('');
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const submitTask = async () => {
         setSubmitError('');
 
         if (!taskType.trim()) {
@@ -169,6 +168,18 @@ export default function TaskCreateForm({ onSuccess }: TaskCreateFormProps) {
         }
     };
 
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await submitTask();
+    };
+
+    // Retrying resubmits the same form values the user already entered,
+    // rather than making them retype everything after a transient server
+    // error.
+    const handleRetry = () => {
+        submitTask();
+    };
+
     const filteredSuggestions = COMMON_TASK_TYPES.filter((type) =>
         type.toLowerCase().includes(taskType.toLowerCase())
     );
@@ -187,7 +198,12 @@ export default function TaskCreateForm({ onSuccess }: TaskCreateFormProps) {
 
             {submitError && (
                 <Alert variant="destructive" role="alert" aria-live="assertive">
-                    <AlertDescription>{submitError}</AlertDescription>
+                    <AlertDescription className="flex items-center justify-between gap-3">
+                        <span>{submitError}</span>
+                        <Button type="button" variant="outline" size="sm" onClick={handleRetry}>
+                            Retry
+                        </Button>
+                    </AlertDescription>
                 </Alert>
             )}
 
@@ -204,7 +220,6 @@ export default function TaskCreateForm({ onSuccess }: TaskCreateFormProps) {
                         onFocus={() => setShowSuggestions(true)}
                         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                         placeholder="e.g., code_generation"
-                        required
                         aria-required="true"
                         className="w-full"
                     />
@@ -214,6 +229,13 @@ export default function TaskCreateForm({ onSuccess }: TaskCreateFormProps) {
                                 <button
                                     key={suggestion}
                                     type="button"
+                                    // Suggestions are a click-to-select
+                                    // affordance, not a Tab stop -- without
+                                    // this, tabbing out of the task type
+                                    // field lands on the first suggestion
+                                    // button instead of the next real
+                                    // field (e.g. Priority).
+                                    tabIndex={-1}
                                     onClick={() => {
                                         setTaskType(suggestion);
                                         setShowSuggestions(false);

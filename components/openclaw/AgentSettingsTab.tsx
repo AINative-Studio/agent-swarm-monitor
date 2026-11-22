@@ -443,6 +443,7 @@ export default function AgentSettingsTab({
 
     return `${enabledDays.length} ${enabledDays.length === 1 ? 'day' : 'days'} configured`;
   }, [activeHoursConfig]);
+
   // Handle fix prompt submission
   const handleSubmitFixPrompt = useCallback(async () => {
     if (!fixPrompt.trim()) return;
