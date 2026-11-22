@@ -11,7 +11,26 @@ vi.mock('@/hooks/useMessages', () => ({
     useSendMessage: vi.fn(),
 }));
 
+vi.mock('@/hooks/useMessageStream', () => ({
+    useMessageStream: vi.fn(),
+}));
+
 import { useMessages, useSendMessage } from '@/hooks/useMessages';
+import { useMessageStream } from '@/hooks/useMessageStream';
+
+function mockMessageStream(overrides: Partial<ReturnType<typeof useMessageStream>> = {}) {
+    vi.mocked(useMessageStream).mockReturnValue({
+        connectionStatus: 'connected',
+        streamingMessage: null,
+        reconnectAttempts: 0,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        stopGeneration: vi.fn(),
+        isConnected: true,
+        isStreaming: false,
+        ...overrides,
+    } as any);
+}
 
 function createWrapper() {
     const queryClient = new QueryClient({
@@ -61,6 +80,7 @@ describe('MessageTranscriptViewer Component', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockMessageStream();
     });
 
     describe('Rendering and Display', () => {
@@ -664,6 +684,455 @@ describe('MessageTranscriptViewer Component', () => {
 
             // Should render without crashing
             expect(container).toBeInTheDocument();
+        });
+    });
+
+    describe('Real-time Streaming (issue #36)', () => {
+        beforeEach(() => {
+            vi.mocked(useMessages).mockReturnValue({
+                data: {
+                    messages: mockMessages,
+                    total: 3,
+                    limit: 50,
+                    offset: 0,
+                    hasMore: false,
+                },
+                isLoading: false,
+                isError: false,
+                error: null,
+            } as any);
+
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: vi.fn(),
+                isPending: false,
+            } as any);
+        });
+
+        it('shows a typing indicator while the assistant is composing with no content yet', () => {
+            mockMessageStream({
+                isStreaming: true,
+                streamingMessage: { messageId: 'stream-1', content: '', isComplete: false, timestamp: new Date().toISOString() },
+            });
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            expect(screen.getByText(/is typing/i)).toBeInTheDocument();
+        });
+
+        it('renders the streaming message content as tokens arrive', () => {
+            mockMessageStream({
+                isStreaming: true,
+                streamingMessage: {
+                    messageId: 'stream-1',
+                    content: 'Partial respo',
+                    isComplete: false,
+                    timestamp: new Date().toISOString(),
+                },
+            });
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            expect(screen.getByTestId('streaming-message-wrapper')).toBeInTheDocument();
+            expect(screen.getByText(/Partial respo/)).toBeInTheDocument();
+        });
+
+        it('does not show the typing indicator once streaming content has arrived', () => {
+            mockMessageStream({
+                isStreaming: true,
+                streamingMessage: {
+                    messageId: 'stream-1',
+                    content: 'Partial respo',
+                    isComplete: false,
+                    timestamp: new Date().toISOString(),
+                },
+            });
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            expect(screen.queryByText(/is typing/i)).not.toBeInTheDocument();
+        });
+
+        it('renders a stop-generation button while streaming and wires it to stopGeneration()', () => {
+            const stopGeneration = vi.fn();
+            mockMessageStream({
+                isStreaming: true,
+                streamingMessage: { messageId: 'stream-1', content: 'Working...', isComplete: false, timestamp: new Date().toISOString() },
+                stopGeneration,
+            });
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            const stopButton = screen.getByRole('button', { name: /stop generating/i });
+            fireEvent.click(stopButton);
+            expect(stopGeneration).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not render the stop-generation button when not streaming', () => {
+            mockMessageStream({ isStreaming: false, streamingMessage: null });
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            expect(screen.queryByRole('button', { name: /stop generating/i })).not.toBeInTheDocument();
+        });
+
+        it('does not open a live stream connection when enableLiveStream is false', () => {
+            mockMessageStream({ isStreaming: true, streamingMessage: { messageId: 's', content: 'x', isComplete: false, timestamp: new Date().toISOString() } });
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                    enableLiveStream={false}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            // Even though the (mocked) hook reports streaming, the viewer should
+            // suppress all live-stream UI when explicitly disabled.
+            expect(screen.queryByTestId('streaming-message-wrapper')).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /stop generating/i })).not.toBeInTheDocument();
+            expect(vi.mocked(useMessageStream)).toHaveBeenCalledWith(
+                expect.objectContaining({ autoConnect: false })
+            );
+        });
+    });
+
+    describe('Jump to matched message (issue #35 search integration)', () => {
+        beforeEach(() => {
+            vi.mocked(useMessages).mockReturnValue({
+                data: {
+                    messages: mockMessages,
+                    total: 3,
+                    limit: 50,
+                    offset: 0,
+                    hasMore: false,
+                },
+                isLoading: false,
+                isError: false,
+                error: null,
+            } as any);
+
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: vi.fn(),
+                isPending: false,
+            } as any);
+        });
+
+        it('scrolls the matched message into view and highlights it when scrollToMessageId is set', async () => {
+            const scrollIntoViewMock = vi.fn();
+            Element.prototype.scrollIntoView = scrollIntoViewMock;
+
+            const { container } = render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                    scrollToMessageId="msg-2"
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            await waitFor(() => {
+                expect(scrollIntoViewMock).toHaveBeenCalled();
+            });
+
+            const highlighted = container.querySelector('.ring-blue-400');
+            expect(highlighted).toBeInTheDocument();
+        });
+    });
+
+    describe('Role-based alignment', () => {
+        it('aligns user messages to the right (justify-end) and assistant messages to the left (justify-start)', () => {
+            vi.mocked(useMessages).mockReturnValue({
+                data: {
+                    messages: mockMessages,
+                    total: 3,
+                    limit: 50,
+                    offset: 0,
+                    hasMore: false,
+                },
+                isLoading: false,
+                isError: false,
+            } as any);
+
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: vi.fn(),
+                isPending: false,
+            } as any);
+
+            const { container } = render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            const userWrapper = container.querySelector('[data-role="user"]')?.closest('.group');
+            const assistantWrapper = container.querySelector('[data-role="assistant"]')?.closest('.group');
+
+            expect(userWrapper).toHaveClass('justify-end');
+            expect(assistantWrapper).toHaveClass('justify-start');
+
+            // The inner bubble itself should also be pushed to the correct
+            // side via margin, not just background color.
+            const userBubble = container.querySelector('[data-role="user"]')?.closest('.max-w-\\[80\\%\\]');
+            const assistantBubble = container.querySelector('[data-role="assistant"]')?.closest('.max-w-\\[80\\%\\]');
+            expect(userBubble).toHaveClass('ml-auto');
+            expect(assistantBubble).toHaveClass('mr-auto');
+        });
+    });
+
+    describe('Message composer', () => {
+        beforeEach(() => {
+            vi.mocked(useMessages).mockReturnValue({
+                data: {
+                    messages: mockMessages,
+                    total: 3,
+                    limit: 50,
+                    offset: 0,
+                    hasMore: false,
+                },
+                isLoading: false,
+                isError: false,
+            } as any);
+        });
+
+        it('renders a message input and a send button', () => {
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: vi.fn(),
+                isPending: false,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            expect(screen.getByLabelText(/message input/i)).toBeInTheDocument();
+            expect(screen.getByLabelText(/send message/i)).toBeInTheDocument();
+        });
+
+        it('disables the send button while the input is empty', () => {
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: vi.fn(),
+                isPending: false,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            expect(screen.getByLabelText(/send message/i)).toBeDisabled();
+        });
+
+        it('enables the send button once text is typed', () => {
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: vi.fn(),
+                isPending: false,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            const input = screen.getByLabelText(/message input/i);
+            fireEvent.change(input, { target: { value: 'Hello agent' } });
+
+            expect(screen.getByLabelText(/send message/i)).not.toBeDisabled();
+        });
+
+        it('disables the send button while a send is in-flight', () => {
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: vi.fn(),
+                isPending: true,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            const input = screen.getByLabelText(/message input/i);
+            fireEvent.change(input, { target: { value: 'Hello agent' } });
+
+            expect(screen.getByLabelText(/send message/i)).toBeDisabled();
+        });
+
+        it('calls the send mutation and optimistically appends the user message when clicking Send', async () => {
+            const mutateMock = vi.fn();
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: mutateMock,
+                isPending: false,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            const input = screen.getByLabelText(/message input/i);
+            fireEvent.change(input, { target: { value: 'New optimistic message' } });
+            fireEvent.click(screen.getByLabelText(/send message/i));
+
+            // Optimistic UI: the message appears immediately, before any
+            // mutation response.
+            expect(screen.getByText('New optimistic message')).toBeInTheDocument();
+
+            expect(mutateMock).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    agentId: mockAgentId,
+                    conversationId: mockConversationId,
+                    message: 'New optimistic message',
+                }),
+                expect.objectContaining({
+                    onSuccess: expect.any(Function),
+                    onError: expect.any(Function),
+                })
+            );
+        });
+
+        it('sends the message on Enter and inserts a newline on Shift+Enter', () => {
+            const mutateMock = vi.fn();
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: mutateMock,
+                isPending: false,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            const input = screen.getByLabelText(/message input/i) as HTMLTextAreaElement;
+            fireEvent.change(input, { target: { value: 'Shift enter test' } });
+
+            // Shift+Enter should NOT send.
+            fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+            expect(mutateMock).not.toHaveBeenCalled();
+
+            // Plain Enter should send.
+            fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
+            expect(mutateMock).toHaveBeenCalled();
+        });
+
+        it('rolls back the optimistic message when the send mutation errors', () => {
+            const mutateMock = vi.fn((_vars, handlers) => {
+                handlers?.onError?.(new Error('send failed'));
+            });
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: mutateMock,
+                isPending: false,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            const input = screen.getByLabelText(/message input/i);
+            fireEvent.change(input, { target: { value: 'This will fail' } });
+            fireEvent.click(screen.getByLabelText(/send message/i));
+
+            expect(screen.queryByText('This will fail')).not.toBeInTheDocument();
+        });
+
+        it('appends the agent reply to the transcript when the send mutation succeeds', () => {
+            const mutateMock = vi.fn((_vars, handlers) => {
+                handlers?.onSuccess?.({
+                    messageId: 'msg-reply-1',
+                    conversationId: mockConversationId,
+                    response: 'Here is my reply',
+                    model: 'claude-3-5-sonnet-20241022',
+                    tokensUsed: 10,
+                });
+            });
+            vi.mocked(useSendMessage).mockReturnValue({
+                mutate: mutateMock,
+                isPending: false,
+            } as any);
+
+            render(
+                <MessageTranscriptViewer
+                    agentId={mockAgentId}
+                    conversationId={mockConversationId}
+                    agentName={mockAgentName}
+                />,
+                { wrapper: createWrapper() }
+            );
+
+            const input = screen.getByLabelText(/message input/i);
+            fireEvent.change(input, { target: { value: 'Trigger a reply' } });
+            fireEvent.click(screen.getByLabelText(/send message/i));
+
+            expect(screen.getByText('Here is my reply')).toBeInTheDocument();
         });
     });
 });
