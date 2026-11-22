@@ -458,4 +458,63 @@ describe('ConversationService', () => {
       await expect(conversationService.listConversations()).rejects.toThrow('Invalid JSON');
     });
   });
+
+  describe('searchMessages', () => {
+    it('should return results sorted by relevance score, highest first', async () => {
+      // "error" and "api" both match mock results with different relevance scores;
+      // the service must sort the combined set by relevanceScore descending.
+      const result = await conversationService.searchMessages('error api');
+
+      expect(result.results.length).toBeGreaterThan(1);
+      for (let i = 1; i < result.results.length; i++) {
+        expect(result.results[i - 1].relevanceScore).toBeGreaterThanOrEqual(
+          result.results[i].relevanceScore
+        );
+      }
+    });
+
+    it('should default to limit 10 and offset 0', async () => {
+      const result = await conversationService.searchMessages('error');
+
+      expect(result.limit).toBe(10);
+      expect(result.offset).toBe(0);
+    });
+
+    it('should paginate results according to limit and offset', async () => {
+      const page1 = await conversationService.searchMessages('error api deployment', undefined, {
+        limit: 1,
+        offset: 0,
+      });
+      const page2 = await conversationService.searchMessages('error api deployment', undefined, {
+        limit: 1,
+        offset: 1,
+      });
+
+      expect(page1.results).toHaveLength(1);
+      expect(page2.results).toHaveLength(1);
+      expect(page1.results[0].id).not.toBe(page2.results[0].id);
+      expect(page1.total).toBe(page2.total);
+      expect(page1.total).toBeGreaterThanOrEqual(2);
+    });
+
+    it('should return an empty page past the end of the results', async () => {
+      const result = await conversationService.searchMessages('error', undefined, {
+        limit: 10,
+        offset: 1000,
+      });
+
+      expect(result.results).toEqual([]);
+      expect(result.total).toBeGreaterThan(0);
+    });
+
+    it('should apply keyword-mode literal substring matching when semantic is false', async () => {
+      const result = await conversationService.searchMessages('error', undefined, {
+        semantic: false,
+      });
+
+      for (const r of result.results) {
+        expect(r.content.toLowerCase()).toContain('error');
+      }
+    });
+  });
 });

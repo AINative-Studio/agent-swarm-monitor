@@ -139,6 +139,8 @@ describe('SemanticSearchUI', () => {
       const mockSearchResults = {
         results: [],
         total: 0,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -202,6 +204,8 @@ describe('SemanticSearchUI', () => {
           },
         ],
         total: 2,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -227,6 +231,8 @@ describe('SemanticSearchUI', () => {
       const mockSearchResults = {
         results: [],
         total: 0,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -259,6 +265,8 @@ describe('SemanticSearchUI', () => {
           },
         ],
         total: 1,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -293,6 +301,8 @@ describe('SemanticSearchUI', () => {
           },
         ],
         total: 1,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -340,6 +350,8 @@ describe('SemanticSearchUI', () => {
       const mockSearchResults = {
         results: [],
         total: 0,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -369,6 +381,8 @@ describe('SemanticSearchUI', () => {
       const mockSearchResults = {
         results: [],
         total: 0,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -418,6 +432,8 @@ describe('SemanticSearchUI', () => {
       const mockSearchResults = {
         results: [],
         total: 0,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -451,6 +467,8 @@ describe('SemanticSearchUI', () => {
       const mockSearchResults = {
         results: [],
         total: 0,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -523,6 +541,8 @@ describe('SemanticSearchUI', () => {
           },
         ],
         total: 2,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -563,6 +583,8 @@ describe('SemanticSearchUI', () => {
           },
         ],
         total: 1,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -617,6 +639,8 @@ describe('SemanticSearchUI', () => {
           },
         ],
         total: 1,
+        limit: 10,
+        offset: 0,
       };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
@@ -656,7 +680,7 @@ describe('SemanticSearchUI', () => {
   describe('Loading States', () => {
     it('should display loading indicator while searching', async () => {
       vi.mocked(conversationService.searchMessages).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ results: [], total: 0 }), 1000))
+        () => new Promise((resolve) => setTimeout(() => resolve({ results: [], total: 0, limit: 10, offset: 0 }), 1000))
       );
 
       render(
@@ -714,7 +738,7 @@ describe('SemanticSearchUI', () => {
     });
 
     it('should pass semantic=true to the search service by default', async () => {
-      const mockSearchResults = { results: [], total: 0 };
+      const mockSearchResults = { results: [], total: 0, limit: 10, offset: 0 };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
       render(
@@ -734,7 +758,7 @@ describe('SemanticSearchUI', () => {
     });
 
     it('should switch to keyword search and pass semantic=false when toggled off', async () => {
-      const mockSearchResults = { results: [], total: 0 };
+      const mockSearchResults = { results: [], total: 0, limit: 10, offset: 0 };
       vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
 
       render(
@@ -755,6 +779,191 @@ describe('SemanticSearchUI', () => {
 
       const lastCall = vi.mocked(conversationService.searchMessages).mock.calls[0];
       expect(lastCall[2]).toEqual(expect.objectContaining({ semantic: false }));
+    });
+  });
+
+  describe('Error fallback to keyword search', () => {
+    it('should retry with semantic=false after the semantic search errors', async () => {
+      vi.mocked(conversationService.searchMessages).mockImplementation(
+        (_query, _filters, options) => {
+          if (options?.semantic) {
+            return Promise.reject(new Error('Semantic search unavailable'));
+          }
+          return Promise.resolve({
+            results: [
+              {
+                id: 'msg-kw-1',
+                conversationId: 'conv-kw-1',
+                conversationTitle: 'Keyword Fallback Result',
+                content: 'Fallback content',
+                role: 'user' as const,
+                agentName: 'Dev-Bot',
+                timestamp: new Date().toISOString(),
+                relevanceScore: 0.5,
+                highlightedContent: 'Fallback content',
+              },
+            ],
+            total: 1,
+            limit: 10,
+            offset: 0,
+          });
+        }
+      );
+
+      render(
+        <SemanticSearchUI open={true} onOpenChange={vi.fn()} />,
+        { wrapper: createWrapper() }
+      );
+
+      const input = screen.getByPlaceholderText(/search conversations/i);
+      await user.type(input, 'test');
+
+      // The fallback keyword call happens after the semantic call errors.
+      await waitFor(() => {
+        const calls = vi.mocked(conversationService.searchMessages).mock.calls;
+        expect(calls.some((c) => c[2]?.semantic === false)).toBe(true);
+      }, DEBOUNCE_WAIT_OPTIONS);
+
+      await waitFor(() => {
+        expect(screen.getByText('Keyword Fallback Result')).toBeInTheDocument();
+      }, DEBOUNCE_WAIT_OPTIONS);
+
+      expect(
+        screen.getByText(/showing keyword search results instead/i)
+      ).toBeInTheDocument();
+    });
+
+    it('should not fall back when the user has keyword search selected already', async () => {
+      vi.mocked(conversationService.searchMessages).mockRejectedValue(
+        new Error('Keyword search failed')
+      );
+
+      render(
+        <SemanticSearchUI open={true} onOpenChange={vi.fn()} />,
+        { wrapper: createWrapper() }
+      );
+
+      const toggle = screen.getByRole('switch', { name: /semantic search/i });
+      await user.click(toggle);
+
+      const input = screen.getByPlaceholderText(/search conversations/i);
+      await user.type(input, 'test');
+
+      await waitFor(() => {
+        expect(screen.getByText(/search failed/i)).toBeInTheDocument();
+      }, DEBOUNCE_WAIT_OPTIONS);
+
+      expect(
+        screen.queryByText(/showing keyword search results instead/i)
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Pagination', () => {
+    it('should show a "Load more" control when more results exist than the current page', async () => {
+      vi.mocked(conversationService.searchMessages).mockResolvedValue({
+        results: [
+          {
+            id: 'msg-1',
+            conversationId: 'conv-1',
+            conversationTitle: 'Result One',
+            content: 'content one',
+            role: 'user',
+            agentName: 'Dev-Bot',
+            timestamp: new Date().toISOString(),
+            relevanceScore: 0.9,
+            highlightedContent: 'content one',
+          },
+        ],
+        total: 5,
+        limit: 1,
+        offset: 0,
+      });
+
+      render(
+        <SemanticSearchUI open={true} onOpenChange={vi.fn()} />,
+        { wrapper: createWrapper() }
+      );
+
+      const input = screen.getByPlaceholderText(/search conversations/i);
+      await user.type(input, 'test');
+
+      await waitFor(() => {
+        expect(screen.getByText(/load more/i)).toBeInTheDocument();
+      }, DEBOUNCE_WAIT_OPTIONS);
+
+      expect(screen.getByText(/4 remaining/i)).toBeInTheDocument();
+    });
+
+    it('should request the next offset and append results when "Load more" is clicked', async () => {
+      const page1 = {
+        results: [
+          {
+            id: 'msg-1',
+            conversationId: 'conv-1',
+            conversationTitle: 'Result One',
+            content: 'content one',
+            role: 'user' as const,
+            agentName: 'Dev-Bot',
+            timestamp: new Date().toISOString(),
+            relevanceScore: 0.9,
+            highlightedContent: 'content one',
+          },
+        ],
+        total: 2,
+        limit: 10,
+        offset: 0,
+      };
+      const page2 = {
+        results: [
+          {
+            id: 'msg-2',
+            conversationId: 'conv-2',
+            conversationTitle: 'Result Two',
+            content: 'content two',
+            role: 'user' as const,
+            agentName: 'Dev-Bot',
+            timestamp: new Date().toISOString(),
+            relevanceScore: 0.7,
+            highlightedContent: 'content two',
+          },
+        ],
+        total: 2,
+        limit: 10,
+        offset: 10,
+      };
+
+      vi.mocked(conversationService.searchMessages).mockImplementation(
+        (_query, _filters, options) =>
+          Promise.resolve(options?.offset === 10 ? page2 : page1)
+      );
+
+      render(
+        <SemanticSearchUI open={true} onOpenChange={vi.fn()} />,
+        { wrapper: createWrapper() }
+      );
+
+      const input = screen.getByPlaceholderText(/search conversations/i);
+      await user.type(input, 'test');
+
+      await waitFor(() => {
+        expect(screen.getByText('Result One')).toBeInTheDocument();
+      }, DEBOUNCE_WAIT_OPTIONS);
+
+      await user.click(screen.getByText(/load more/i));
+
+      await waitFor(() => {
+        const calls = vi.mocked(conversationService.searchMessages).mock.calls;
+        expect(calls.some((c) => c[2]?.offset === 10)).toBe(true);
+      }, DEBOUNCE_WAIT_OPTIONS);
+
+      await waitFor(() => {
+        expect(screen.getByText('Result Two')).toBeInTheDocument();
+      }, DEBOUNCE_WAIT_OPTIONS);
+
+      // Both pages' results should be visible — "Load more" appends, not replaces.
+      expect(screen.getByText('Result One')).toBeInTheDocument();
+      expect(screen.queryByText(/load more/i)).not.toBeInTheDocument();
     });
   });
 });

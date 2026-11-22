@@ -27,6 +27,7 @@ import { formatRelativeTime } from '@/lib/openclaw-utils';
 const MAX_HISTORY_ITEMS = 5;
 const SEARCH_DEBOUNCE_MS = 300;
 const STORAGE_KEY = 'semantic-search-history';
+const PAGE_SIZE = 10;
 
 interface SemanticSearchUIProps {
   open: boolean;
@@ -48,6 +49,11 @@ export default function SemanticSearchUI({
   const [semanticSearch, setSemanticSearch] = React.useState(true);
   const [searchHistory, setSearchHistory] = React.useState<string[]>([]);
   const [focusedIndex, setFocusedIndex] = React.useState(-1);
+  const [page, setPage] = React.useState(0);
+  // When a semantic search errors, we retry the same query in keyword mode. This is
+  // tracked separately from the user's `semanticSearch` toggle so the toggle's own
+  // state (and its label) still reflects the user's actual preference.
+  const [fallbackToKeyword, setFallbackToKeyword] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const resultsRef = React.useRef<HTMLDivElement>(null);
 
@@ -73,6 +79,14 @@ export default function SemanticSearchUI({
 
     return () => clearTimeout(timer);
   }, [query]);
+
+  // Reset to the first page and clear any error fallback whenever the effective search
+  // changes (new query, filters, or search mode) so stale pagination/fallback state from
+  // a previous search doesn't leak into the next one.
+  React.useEffect(() => {
+    setPage(0);
+    setFallbackToKeyword(false);
+  }, [debouncedQuery, selectedAgent, dateRange, semanticSearch]);
 
   // Build filters
   const filters = React.useMemo((): SearchFilters | undefined => {
@@ -109,15 +123,65 @@ export default function SemanticSearchUI({
     return hasFilters ? f : undefined;
   }, [selectedAgent, dateRange]);
 
-  // Search query
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-  } = useSearchMessages(debouncedQuery, filters, debouncedQuery.length >= 2, {
-    semantic: semanticSearch,
-  });
+  // Effective search mode: if the primary search (per the user's toggle) errored, we
+  // retry once in keyword mode rather than surfacing a dead end.
+  const effectiveSemantic = semanticSearch && !fallbackToKeyword;
+
+  // Primary search query, in the mode the user selected.
+  const primaryResult = useSearchMessages(
+    debouncedQuery,
+    filters,
+    debouncedQuery.length >= 2,
+    { semantic: semanticSearch, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+  );
+
+  // Fallback keyword search, only enabled once the primary semantic search has errored.
+  const fallbackResult = useSearchMessages(
+    debouncedQuery,
+    filters,
+    fallbackToKeyword && debouncedQuery.length >= 2,
+    { semantic: false, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+  );
+
+  // Trigger the keyword fallback the first time the primary (semantic) search errors.
+  React.useEffect(() => {
+    if (semanticSearch && primaryResult.isError && !fallbackToKeyword) {
+      setFallbackToKeyword(true);
+    }
+  }, [semanticSearch, primaryResult.isError, fallbackToKeyword]);
+
+  const { data, isLoading, isError, error } = fallbackToKeyword
+    ? fallbackResult
+    : primaryResult;
+
+  // Accumulate results across pages for the current search (query/filters/mode), so
+  // "Load more" appends to what's already shown instead of replacing it. Keyed by the
+  // search identity (not just offset, since a short page would make offset/length
+  // bookkeeping unreliable) so switching query/filters/mode starts a fresh accumulation,
+  // and tracked by which page number each response answered so out-of-order responses
+  // (e.g. a slow page-1 retry arriving after page 2) don't get appended twice.
+  const searchKey = `${debouncedQuery}|${JSON.stringify(filters)}|${effectiveSemantic}`;
+  type SearchResults = NonNullable<typeof data>['results'];
+  const [accumulated, setAccumulated] = React.useState<{
+    key: string;
+    lastPage: number;
+    results: SearchResults;
+  }>({ key: searchKey, lastPage: -1, results: [] });
+
+  React.useEffect(() => {
+    if (!data) return;
+    setAccumulated((prev) => {
+      if (prev.key !== searchKey || page === 0) {
+        return { key: searchKey, lastPage: page, results: data.results };
+      }
+      if (page === prev.lastPage + 1) {
+        return { key: searchKey, lastPage: page, results: [...prev.results, ...data.results] };
+      }
+      return prev;
+    });
+  }, [data, searchKey, page]);
+
+  const accumulatedResults = accumulated.key === searchKey ? accumulated.results : [];
 
   // Save to history when search completes successfully.
   //
@@ -147,19 +211,19 @@ export default function SemanticSearchUI({
 
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!data?.results.length) return;
+    if (!accumulatedResults.length) return;
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setFocusedIndex((prev) =>
-        prev < data.results.length - 1 ? prev + 1 : prev
+        prev < accumulatedResults.length - 1 ? prev + 1 : prev
       );
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setFocusedIndex((prev) => (prev > 0 ? prev - 1 : -1));
     } else if (e.key === 'Enter' && focusedIndex >= 0) {
       e.preventDefault();
-      const result = data.results[focusedIndex];
+      const result = accumulatedResults[focusedIndex];
       if (result && onResultClick) {
         onResultClick(result.conversationId, result.id);
         onOpenChange(false);
@@ -331,6 +395,22 @@ export default function SemanticSearchUI({
           {isError && (
             <div className="py-12 text-center text-destructive">
               <p>Search failed: {error instanceof Error ? error.message : 'Unknown error'}</p>
+              {fallbackToKeyword && (
+                <p className="text-sm mt-2 text-muted-foreground">
+                  Keyword search fallback also failed.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Fallback notice: semantic search failed, showing keyword results instead */}
+          {fallbackToKeyword && !isError && (
+            <div
+              role="status"
+              className="mb-3 text-xs text-muted-foreground bg-muted/50 rounded px-3 py-2"
+            >
+              Semantic search is unavailable right now — showing keyword search results
+              instead.
             </div>
           )}
 
@@ -345,7 +425,7 @@ export default function SemanticSearchUI({
               </div>
 
               {/* No Results */}
-              {data.results.length === 0 && (
+              {accumulatedResults.length === 0 && (
                 <div className="py-12 text-center text-muted-foreground">
                   <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No results found for &quot;{debouncedQuery}&quot;</p>
@@ -354,9 +434,9 @@ export default function SemanticSearchUI({
               )}
 
               {/* Results List */}
-              {data.results.length > 0 && (
+              {accumulatedResults.length > 0 && (
                 <div ref={resultsRef} className="space-y-3">
-                  {data.results.map((result, index) => (
+                  {accumulatedResults.map((result, index) => (
                     <button
                       key={result.id}
                       onClick={() => handleResultClick(result.conversationId, result.id)}
@@ -398,6 +478,19 @@ export default function SemanticSearchUI({
                       </div>
                     </button>
                   ))}
+                </div>
+              )}
+
+              {/* Pagination: load more results */}
+              {accumulatedResults.length > 0 && accumulatedResults.length < data.total && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={() => setPage((prev) => prev + 1)}
+                    disabled={isLoading}
+                    className="text-sm px-4 py-2 rounded-md border hover:bg-muted transition-colors disabled:opacity-50"
+                  >
+                    Load more ({data.total - accumulatedResults.length} remaining)
+                  </button>
                 </div>
               )}
             </>

@@ -132,11 +132,15 @@ class ConversationService {
     options?: SearchMessagesOptions
   ): Promise<SearchMessagesResponse> {
     const semantic = options?.semantic ?? true;
+    const limit = options?.limit ?? 10;
+    const offset = options?.offset ?? 0;
 
     // TODO: Replace with real API call when backend endpoint is ready
     // const params = new URLSearchParams();
     // params.append('q', query);
     // params.append('semantic', String(semantic));
+    // params.append('limit', String(limit));
+    // params.append('offset', String(offset));
     // if (filters?.agentId) params.append('agentId', filters.agentId);
     // if (filters?.dateFrom) params.append('dateFrom', filters.dateFrom);
     // if (filters?.dateTo) params.append('dateTo', filters.dateTo);
@@ -246,9 +250,19 @@ class ConversationService {
       );
     }
 
+    // Sort by relevance score, highest first, before paginating.
+    const sortedResults = [...filteredResults].sort(
+      (a, b) => b.relevanceScore - a.relevanceScore
+    );
+
+    const total = sortedResults.length;
+    const page = sortedResults.slice(offset, offset + limit);
+
     return {
-      results: filteredResults,
-      total: filteredResults.length,
+      results: page,
+      total,
+      limit,
+      offset,
     };
   }
 }

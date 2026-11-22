@@ -104,9 +104,15 @@ export interface SearchMessage {
 export interface SearchMessagesResponse {
   results: SearchMessage[];
   total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface SearchMessagesOptions {
   /** Semantic (embedding/natural-language) search vs plain keyword search. Default true. */
   semantic?: boolean;
+  /** Maximum number of results to return for this page. Default 10. */
+  limit?: number;
+  /** Number of results to skip (for pagination). Default 0. */
+  offset?: number;
 }
