@@ -20,7 +20,7 @@ Please describe the use case and why the feature would be valuable.
 
 ## Documentation
 
-Start with the [README](README.md) for an overview of the project, setup
+Start with the [README](https://github.com/AINative-Studio/agent-swarm-monitor#readme) for an overview of the project, setup
 instructions, and architecture. The `docs/` directory contains additional
 implementation notes.
 
