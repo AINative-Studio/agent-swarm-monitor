@@ -245,13 +245,13 @@ export default function OpenClawSidebar({
       {/* Footer */}
       <div className="mt-auto px-2 pb-4 space-y-2">
         {/* Message Founders */}
-        <Link
-          href="/message-founders"
+        <a
+          href="mailto:support@ainative.studio"
           className="flex items-center gap-3 px-3 py-2 text-sm text-[#6B6B6B] hover:bg-[#F5F4F1] hover:text-gray-900 rounded-lg transition-colors"
         >
           <MessageSquare className="h-4 w-4 shrink-0 text-[#8C8C8C]" />
           <span>Message Founders</span>
-        </Link>
+        </a>
 
         {/* User profile */}
         <div className="flex items-center gap-3 px-3 py-2">
