@@ -14,6 +14,7 @@ import {
 } from '@/lib/openclaw-utils';
 import AgentStatusBadge from '@/components/openclaw/AgentStatusBadge';
 import TemplateGrid from '@/components/openclaw/TemplateGrid';
+import ListErrorState from '@/components/openclaw/ListErrorState';
 import type { OpenClawAgent } from '@/types/openclaw';
 
 function getGreeting(): string {
@@ -97,7 +98,7 @@ function AgentRow({ agent, index }: AgentRowProps) {
 
 export default function OpenClawHomeClient() {
   const router = useRouter();
-  const { data, isLoading } = useAgentList();
+  const { data, isLoading, isError, error, refetch } = useAgentList();
   const { data: health } = useSwarmHealth();
   const { data: timeline } = useTimeline({ limit: 1, offset: 0 });
   const { data: templateData } = useTemplateList();
@@ -165,6 +166,12 @@ export default function OpenClawHomeClient() {
               />
             ))}
           </div>
+        ) : isError ? (
+          <ListErrorState
+            error={error}
+            message="Failed to load your AI team."
+            onRetry={() => refetch()}
+          />
         ) : (
           <div className="divide-y divide-gray-100">
             {agents.map((agent, i) => (

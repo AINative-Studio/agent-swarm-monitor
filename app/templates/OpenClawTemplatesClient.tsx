@@ -7,6 +7,7 @@ import { useTemplateList } from '@/hooks/useTemplates';
 import { useCreateAgent } from '@/hooks/useOpenClawAgents';
 import TemplateCard from '@/components/openclaw/TemplateCard';
 import CreateAgentDialog from '@/components/openclaw/CreateAgentDialog';
+import ListErrorState from '@/components/openclaw/ListErrorState';
 import type { OpenClawTemplate, CreateAgentRequest } from '@/types/openclaw';
 
 const fadeUp = {
@@ -52,7 +53,7 @@ export default function OpenClawTemplatesClient() {
   const [selectedTemplate, setSelectedTemplate] = useState<OpenClawTemplate | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const { data: templateData, isLoading } = useTemplateList();
+  const { data: templateData, isLoading, isError, error, refetch } = useTemplateList();
   const createAgent = useCreateAgent();
 
   const templates = useMemo(() => templateData?.templates ?? [], [templateData]);
@@ -89,10 +90,14 @@ export default function OpenClawTemplatesClient() {
   };
 
   const handleCreate = (formData: CreateAgentRequest) => {
-    createAgent.mutate(formData, {
-      onSuccess: (agent) => {
-        router.push(`/agents/${agent.id}`);
-      },
+    return new Promise<void>((resolve, reject) => {
+      createAgent.mutate(formData, {
+        onSuccess: (agent) => {
+          router.push(`/agents/${agent.id}`);
+          resolve();
+        },
+        onError: (err) => reject(err),
+      });
     });
   };
 
@@ -159,8 +164,17 @@ export default function OpenClawTemplatesClient() {
         </div>
       )}
 
+      {/* Error state */}
+      {!isLoading && isError && (
+        <ListErrorState
+          error={error}
+          message="Failed to load templates."
+          onRetry={() => refetch()}
+        />
+      )}
+
       {/* Grouped templates */}
-      {!isLoading && (
+      {!isLoading && !isError && (
         <div className="space-y-10">
           {Object.entries(groupedTemplates).map(([category, temps], groupIdx) => {
             const meta = categoryDescriptions[category];
@@ -213,6 +227,7 @@ export default function OpenClawTemplatesClient() {
         onOpenChange={handleDialogChange}
         onSubmit={handleCreate}
         template={selectedTemplate}
+        isSubmitting={createAgent.isPending}
       />
     </div>
   );

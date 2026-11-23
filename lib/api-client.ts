@@ -57,6 +57,21 @@ export class ApiTimeoutError extends Error {
     }
 }
 
+/**
+ * React Query `retry` option that skips retries for auth failures (401/403).
+ * Retrying an unauthenticated request can't succeed, so without this a list
+ * query stays in `isLoading`/`isFetching` through React Query's default 3
+ * retries (with exponential backoff) before finally surfacing `isError` --
+ * several extra seconds of a misleading loading state for an error that will
+ * never resolve on its own. See issue #109.
+ */
+export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
+    if (error instanceof ApiError && (error.statusCode === 401 || error.statusCode === 403)) {
+        return false;
+    }
+    return failureCount < 3;
+}
+
 class ApiClient {
     private baseUrl: string;
     private defaultTimeout: number = 30000; // 30 seconds

@@ -19,6 +19,7 @@ import conversationService from '@/lib/conversation-service';
 import { useAgentList } from '@/hooks/useOpenClawAgents';
 import { formatRelativeTime } from '@/lib/openclaw-utils';
 import { groupConversationsByAgent, type ConversationGroup } from '@/lib/conversation-grouping';
+import { getErrorMessage } from '@/components/openclaw/ListErrorState';
 import type { Conversation } from '@/types/conversation';
 
 const PAGE_SIZE = 20;
@@ -52,7 +53,7 @@ export default function ConversationListSidebar({
   // `agentId` prop, the agent-filter dropdown below can still narrow the
   // fetch/display down to one agent client-side.
   const effectiveAgentId = agentId ?? (agentFilter !== 'all' ? agentFilter : undefined);
-  const { data, isLoading, isError } = useConversations(effectiveAgentId);
+  const { data, isLoading, isError, error, refetch } = useConversations(effectiveAgentId);
   const { data: agentListData } = useAgentList();
   const deleteConversation = useDeleteConversation();
 
@@ -190,14 +191,17 @@ export default function ConversationListSidebar({
     return (
       <div className={cn('flex flex-col h-full bg-white border-r border-gray-200', className)}>
         <div className="flex items-center justify-center h-full">
-          <div className="text-center px-4">
+          <div className="text-center px-4" role="alert" aria-live="assertive">
             <MessageSquare className="h-12 w-12 text-red-400 mx-auto mb-3" />
             <h3 className="text-sm font-medium text-gray-900 mb-1">
               Error Loading Conversations
             </h3>
-            <p className="text-xs text-gray-500">
-              Unable to load conversations. Please try again later.
+            <p className="text-xs text-gray-500 mb-3">
+              {getErrorMessage(error, 'Unable to load conversations. Please try again later.')}
             </p>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+              Retry
+            </Button>
           </div>
         </div>
       </div>

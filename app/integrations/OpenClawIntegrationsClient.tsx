@@ -8,9 +8,10 @@ import { MOCK_INTEGRATIONS } from '@/lib/openclaw-mock-data';
 import { fadeUp } from '@/lib/openclaw-utils';
 import AgentPicker from '@/components/openclaw/AgentPicker';
 import IntegrationRow from '@/components/openclaw/IntegrationRow';
+import ListErrorState from '@/components/openclaw/ListErrorState';
 
 export default function OpenClawIntegrationsClient() {
-  const { data } = useAgentList();
+  const { data, isError, error, refetch } = useAgentList();
   const agents = data?.agents ?? [];
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(
     agents[0]?.id
@@ -45,11 +46,19 @@ export default function OpenClawIntegrationsClient() {
         initial="hidden"
         animate="visible"
       >
-        <AgentPicker
-          agents={agents}
-          selectedId={selectedAgentId}
-          onSelect={setSelectedAgentId}
-        />
+        {isError ? (
+          <ListErrorState
+            error={error}
+            message="Couldn't load agents."
+            onRetry={() => refetch()}
+          />
+        ) : (
+          <AgentPicker
+            agents={agents}
+            selectedId={selectedAgentId}
+            onSelect={setSelectedAgentId}
+          />
+        )}
       </motion.div>
 
       {/* Integrations card */}

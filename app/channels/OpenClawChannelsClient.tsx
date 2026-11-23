@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { fadeUp } from '@/lib/openclaw-utils';
 import AgentPicker from '@/components/openclaw/AgentPicker';
 import ChannelRow from '@/components/openclaw/ChannelRow';
+import ListErrorState from '@/components/openclaw/ListErrorState';
 import WhatsAppConnectionModal from '@/components/openclaw/WhatsAppConnectionModal';
 import TokenConnectionModal from '@/components/openclaw/TokenConnectionModal';
 import ComingSoonModal from '@/components/openclaw/ComingSoonModal';
@@ -52,7 +53,7 @@ type ChannelId = typeof AVAILABLE_CHANNELS[number]['id'];
 type ModalState = { type: ChannelId; channelName: string } | null;
 
 export default function OpenClawChannelsClient() {
-  const { data } = useAgentList();
+  const { data, isError, error, refetch } = useAgentList();
   const agents = data?.agents ?? [];
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(
     agents[0]?.id
@@ -264,11 +265,19 @@ export default function OpenClawChannelsClient() {
         initial="hidden"
         animate="visible"
       >
-        <AgentPicker
-          agents={agents}
-          selectedId={selectedAgentId}
-          onSelect={setSelectedAgentId}
-        />
+        {isError ? (
+          <ListErrorState
+            error={error}
+            message="Couldn't load agents."
+            onRetry={() => refetch()}
+          />
+        ) : (
+          <AgentPicker
+            agents={agents}
+            selectedId={selectedAgentId}
+            onSelect={setSelectedAgentId}
+          />
+        )}
       </motion.div>
 
       {/* Channels card */}

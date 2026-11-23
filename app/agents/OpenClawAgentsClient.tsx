@@ -10,11 +10,12 @@ import { useAgentList, useCreateAgent } from '@/hooks/useOpenClawAgents';
 import { fadeUp, formatRelativeTime } from '@/lib/openclaw-utils';
 import AgentStatusBadge from '@/components/openclaw/AgentStatusBadge';
 import CreateAgentDialog from '@/components/openclaw/CreateAgentDialog';
+import ListErrorState from '@/components/openclaw/ListErrorState';
 import type { CreateAgentRequest } from '@/types/openclaw';
 
 export default function OpenClawAgentsClient() {
   const router = useRouter();
-  const { data, isLoading } = useAgentList();
+  const { data, isLoading, isError, error, refetch } = useAgentList();
   const createAgent = useCreateAgent();
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -28,10 +29,14 @@ export default function OpenClawAgentsClient() {
   }, [agents, search]);
 
   const handleCreate = (formData: CreateAgentRequest) => {
-    createAgent.mutate(formData, {
-      onSuccess: (agent) => {
-        router.push(`/agents/${agent.id}`);
-      },
+    return new Promise<void>((resolve, reject) => {
+      createAgent.mutate(formData, {
+        onSuccess: (agent) => {
+          router.push(`/agents/${agent.id}`);
+          resolve();
+        },
+        onError: (err) => reject(err),
+      });
     });
   };
 
@@ -90,6 +95,12 @@ export default function OpenClawAgentsClient() {
               />
             ))}
           </div>
+        ) : isError ? (
+          <ListErrorState
+            error={error}
+            message="Failed to load agents."
+            onRetry={() => refetch()}
+          />
         ) : (
           <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
             {/* Table header */}
@@ -143,6 +154,7 @@ export default function OpenClawAgentsClient() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onSubmit={handleCreate}
+        isSubmitting={createAgent.isPending}
       />
     </div>
   );
