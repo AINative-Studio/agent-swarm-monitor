@@ -75,7 +75,7 @@ export default function OpenClawSwarmDetailClient({
     const addAgents = useAddAgentsToSwarm(swarmId);
     const removeAgents = useRemoveAgentsFromSwarm(swarmId);
 
-    const { data: agentData } = useAgentList();
+    const { data: agentData, isLoading: agentsLoading, error: agentsError } = useAgentList();
     const allAgents = agentData?.agents ?? [];
 
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -387,7 +387,31 @@ export default function OpenClawSwarmDetailClient({
                     </div>
 
                     <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-                        {swarmAgents.length === 0 ? (
+                        {agentsLoading ? (
+                            <div className="px-5 py-10 text-center text-sm text-gray-500">
+                                Loading agent roster&hellip;
+                            </div>
+                        ) : agentsError ? (
+                            <div className="px-5 py-10 text-center text-sm">
+                                <p className="font-semibold text-red-700 mb-1">
+                                    Unable to load the agent roster
+                                </p>
+                                <p className="text-red-600">
+                                    {swarm.agentCount > 0
+                                        ? `This swarm has ${swarm.agentCount} agent${swarm.agentCount !== 1 ? 's' : ''}, but the roster could not be fetched. Try refreshing the page.`
+                                        : 'The agent list could not be fetched. Try refreshing the page.'}
+                                </p>
+                            </div>
+                        ) : swarmAgents.length === 0 && swarm.agentCount > 0 ? (
+                            <div className="px-5 py-10 text-center text-sm">
+                                <p className="font-semibold text-yellow-700 mb-1">
+                                    Roster mismatch
+                                </p>
+                                <p className="text-gray-500">
+                                    This swarm reports {swarm.agentCount} agent{swarm.agentCount !== 1 ? 's' : ''}, but none could be matched in the agent list. The agents may have been deleted, or the data is out of sync.
+                                </p>
+                            </div>
+                        ) : swarmAgents.length === 0 ? (
                             <div className="px-5 py-10 text-center text-sm text-gray-500">
                                 No agents in this swarm yet. Click &quot;Add Agents&quot; to get started.
                             </div>
