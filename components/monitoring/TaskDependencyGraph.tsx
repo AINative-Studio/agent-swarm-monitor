@@ -64,7 +64,7 @@ export default function TaskDependencyGraph({
 
         const links: TaskGraphLink[] = [];
         filteredTasks.forEach(task => {
-            task.dependencies.forEach(depId => {
+            task.dependencies.forEach((depId: string) => {
                 // Only create link if both nodes exist in filtered set
                 if (taskMap.has(depId)) {
                     links.push({

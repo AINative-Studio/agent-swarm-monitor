@@ -29,7 +29,7 @@ import {
 import { useAgentMonitoring } from '@/hooks/useMonitoring';
 import { Badge } from '@/components/ui/badge';
 import { fadeUp } from '@/lib/openclaw-utils';
-import type { AgentHealthStatus, AgentMetrics } from '@/types/monitoring';
+import type { AgentHealthStatus, AgentMetrics, AgentAlert, AgentRecentTask, AgentErrorLogEntry } from '@/types/monitoring';
 
 const STATUS_COLORS: Record<AgentHealthStatus, string> = {
     healthy: 'bg-green-50 text-green-700 border-green-200',
@@ -101,7 +101,7 @@ export default function AgentMonitoringDashboard() {
 
     const performanceChartData = useMemo(() => {
         if (!data?.agents) return [];
-        return data.agents.map((agent) => ({
+        return data.agents.map((agent: AgentMetrics) => ({
             name: agent.agentName.split(' ')[0],
             successRate: agent.performance.successRate,
             errorRate: agent.performance.errorRate,
@@ -421,7 +421,7 @@ function AgentCard({ agent }: { agent: AgentMetrics }) {
                 <div className="mb-4">
                     <h4 className="text-xs font-semibold text-gray-700 mb-2">Alerts</h4>
                     <div className="space-y-2">
-                        {agent.alerts.slice(0, 3).map((alert) => (
+                        {agent.alerts.slice(0, 3).map((alert: AgentAlert) => (
                             <div
                                 key={alert.id}
                                 className={`rounded-md px-3 py-2 text-sm ${SEVERITY_COLORS[alert.severity]}`}
@@ -443,7 +443,7 @@ function AgentCard({ agent }: { agent: AgentMetrics }) {
                 <div>
                     <h4 className="text-xs font-semibold text-gray-700 mb-2">Recent Tasks</h4>
                     <div className="space-y-2">
-                        {agent.recentTasks.slice(0, 3).map((task) => (
+                        {agent.recentTasks.slice(0, 3).map((task: AgentRecentTask) => (
                             <div
                                 key={task.taskId}
                                 className="flex items-center justify-between text-sm border-l-2 pl-3 py-1"
@@ -486,7 +486,7 @@ function AgentCard({ agent }: { agent: AgentMetrics }) {
                 <div className="mt-4 pt-4 border-t border-gray-200">
                     <h4 className="text-xs font-semibold text-gray-700 mb-2">Error Log</h4>
                     <div className="space-y-1">
-                        {agent.errorLog.slice(0, 2).map((error, idx) => (
+                        {agent.errorLog.slice(0, 2).map((error: AgentErrorLogEntry, idx: number) => (
                             <div
                                 key={idx}
                                 className="text-xs text-red-600 bg-red-50 rounded px-2 py-1"
