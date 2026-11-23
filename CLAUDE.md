@@ -98,7 +98,8 @@ npm run test:coverage # Vitest with V8 coverage
 ## Environment Variables
 
 ```
-API_URL=http://localhost:8000    # OpenClaw backend API (default in next.config.ts)
+API_URL=http://localhost:8001                     # OpenClaw backend API (server-side rewrite, next.config.ts)
+NEXT_PUBLIC_API_URL=http://localhost:8001/api/v1   # OpenClaw backend API (client-side fetches, lib/api-client.ts, lib/monitoring-service.ts)
 ```
 
 ## Architecture Patterns

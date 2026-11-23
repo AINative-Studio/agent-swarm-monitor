@@ -40,7 +40,7 @@ class MonitoringService {
     }
 
     async getPrometheusMetrics(): Promise<PrometheusMetricsSnapshot> {
-        const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/../metrics`;
+        const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api/v1'}/../metrics`;
         const response = await fetch(url.replace('/api/v1/../', '/'));
         const text = await response.text();
         const parsed = parsePrometheusMetrics(text);

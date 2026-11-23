@@ -20,7 +20,7 @@ See [`CLAUDE.md`](./CLAUDE.md) for the full architecture breakdown (directory st
 
 ```bash
 npm install
-cp .env.example .env   # fill in API_URL and the OpenClaw gateway URL/token
+cp .env.example .env   # fill in NEXT_PUBLIC_API_URL and the OpenClaw gateway URL/token
 npm run dev             # starts on http://localhost:3002
 ```
 
@@ -40,10 +40,13 @@ npm run dev             # starts on http://localhost:3002
 ### Environment variables
 
 ```
-API_URL=http://localhost:8000                     # OpenClaw backend API
+API_URL=http://localhost:8001                     # OpenClaw backend API (server-side rewrite, next.config.ts)
+NEXT_PUBLIC_API_URL=http://localhost:8001/api/v1   # OpenClaw backend API (client-side fetches, lib/api-client.ts)
 NEXT_PUBLIC_OPENCLAW_GATEWAY_URL=http://localhost:18789
 NEXT_PUBLIC_OPENCLAW_GATEWAY_TOKEN=<your-token>
 ```
+
+`API_URL` and `NEXT_PUBLIC_API_URL` must point at the same backend — keep them in sync. The OpenClaw backend's standard local dev port is 8001; port 8000 is commonly used by unrelated local services and following the old `API_URL=http://localhost:8000` default here will silently 503/404 every list and detail page.
 
 ## Current state
 

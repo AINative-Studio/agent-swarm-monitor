@@ -78,7 +78,7 @@ class ApiClient {
     private token: string | null = null;
 
     constructor() {
-        this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+        this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api/v1';
     }
 
     setToken(token: string | null) {
