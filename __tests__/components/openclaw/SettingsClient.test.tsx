@@ -100,4 +100,26 @@ describe('SettingsClient', () => {
     });
     expect(await screen.findByText('Saved')).toBeInTheDocument();
   });
+
+  describe('Security section (issue #115)', () => {
+    it('opens a "Coming Soon" dialog when "Enable" (2FA) is clicked, instead of doing nothing', () => {
+      renderWithQueryClient(<SettingsClient />);
+
+      expect(screen.queryByText(/Two-factor authentication - Coming Soon/)).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
+
+      expect(screen.getByText('Two-factor authentication - Coming Soon')).toBeInTheDocument();
+    });
+
+    it('opens a "Coming Soon" dialog when "View Sessions" is clicked, instead of doing nothing', () => {
+      renderWithQueryClient(<SettingsClient />);
+
+      expect(screen.queryByText(/Active sessions - Coming Soon/)).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'View Sessions' }));
+
+      expect(screen.getByText('Active sessions - Coming Soon')).toBeInTheDocument();
+    });
+  });
 });

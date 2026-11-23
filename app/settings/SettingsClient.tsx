@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import ComingSoonModal from '@/components/openclaw/ComingSoonModal';
 // Static provider list — these are well-known LLM providers, not dynamic backend data
 import { MOCK_API_KEY_PROVIDERS, MOCK_CHANNELS } from '@/lib/openclaw-mock-data';
 import { fadeUp, MODEL_OPTIONS } from '@/lib/openclaw-utils';
@@ -68,6 +69,13 @@ export default function SettingsClient() {
   const [weeklyDigest, setWeeklyDigest] = useState(false);
 
   const [copiedSlug, setCopiedSlug] = useState(false);
+
+  // Neither 2FA enrollment nor session management is built yet — surface an
+  // honest "Coming Soon" modal (same pattern used for Microsoft Teams on
+  // /channels and Gmail/LinkedIn on /integrations) instead of a silent no-op.
+  const [securityComingSoon, setSecurityComingSoon] = useState<
+    'Two-factor authentication' | 'Active sessions' | null
+  >(null);
 
   const handleAddKey = () => {
     if (!newKeyProvider || !newKeyValue.trim()) return;
@@ -526,6 +534,7 @@ export default function SettingsClient() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setSecurityComingSoon('Two-factor authentication')}
             className="border-gray-200 bg-white hover:bg-gray-50 text-sm"
           >
             Enable
@@ -544,12 +553,20 @@ export default function SettingsClient() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setSecurityComingSoon('Active sessions')}
             className="border-gray-200 bg-white hover:bg-gray-50 text-sm"
           >
             View Sessions
           </Button>
         </div>
       </motion.div>
+
+      {/* Security features coming soon modal (2FA enrollment, session management) */}
+      <ComingSoonModal
+        open={securityComingSoon !== null}
+        onOpenChange={(open) => !open && setSecurityComingSoon(null)}
+        channelName={securityComingSoon ?? ''}
+      />
 
       {/* Gateway Configuration */}
       <motion.div
