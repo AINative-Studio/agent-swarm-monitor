@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import teamService from '@/lib/team-service';
+import ListErrorState, { getErrorMessage } from '@/components/openclaw/ListErrorState';
 import type { TeamMember } from '@/types/openclaw';
 
 const fadeUp = {
@@ -97,7 +98,7 @@ export default function OpenClawTeamClient() {
   const [role, setRole] = useState('viewer');
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['team-members'],
     queryFn: () => teamService.listMembers(),
     refetchInterval: 30000,
@@ -111,13 +112,17 @@ export default function OpenClawTeamClient() {
   const inviteMutation = useMutation({
     mutationFn: (vars: { email: string; name: string; role: string }) =>
       teamService.inviteMember(vars),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['team-members'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['team-members'] });
+      // Only clear the form on confirmed success -- see issue #108.
+      setEmail('');
+      setRole('viewer');
+    },
   });
 
   const handleAddMember = () => {
     if (!email.trim()) return;
     inviteMutation.mutate({ email: email.trim(), name: email.split('@')[0], role });
-    setEmail('');
   };
 
   return (
@@ -148,18 +153,26 @@ export default function OpenClawTeamClient() {
           <h2 className="text-base font-semibold text-gray-900">Add Member</h2>
         </div>
 
+        {inviteMutation.isError && (
+          <ListErrorState
+            error={inviteMutation.error}
+            onRetry={handleAddMember}
+          />
+        )}
+
         <div className="flex items-center gap-3">
           <Input
             type="email"
             placeholder="Email address"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={inviteMutation.isPending}
             className="flex-1 bg-white border-gray-200 text-gray-900 placeholder:text-gray-400"
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAddMember();
             }}
           />
-          <Select value={role} onValueChange={setRole}>
+          <Select value={role} onValueChange={setRole} disabled={inviteMutation.isPending}>
             <SelectTrigger className="w-[120px] bg-white border-gray-200 text-gray-900 text-sm">
               <SelectValue />
             </SelectTrigger>
@@ -174,10 +187,17 @@ export default function OpenClawTeamClient() {
           </Select>
           <Button
             onClick={handleAddMember}
-            disabled={!email.trim()}
+            disabled={!email.trim() || inviteMutation.isPending}
             className="bg-gray-900 hover:bg-gray-800 text-white px-5"
           >
-            Add
+            {inviteMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Adding...
+              </>
+            ) : (
+              'Add'
+            )}
           </Button>
         </div>
       </motion.div>
@@ -192,7 +212,7 @@ export default function OpenClawTeamClient() {
       >
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">
-            Members {isLoading ? '' : `(${members.length})`}
+            Members {isLoading || isError ? '' : `(${members.length})`}
           </h2>
         </div>
         <div className="px-5 divide-y divide-gray-100">
@@ -200,9 +220,19 @@ export default function OpenClawTeamClient() {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
             </div>
-          ) : members.map((member) => (
-            <MemberRow key={member.id} member={member} />
-          ))}
+          ) : isError ? (
+            <div className="py-4">
+              <ListErrorState
+                error={error}
+                message={getErrorMessage(error, 'Failed to load team members.')}
+                onRetry={() => refetch()}
+              />
+            </div>
+          ) : (
+            members.map((member) => (
+              <MemberRow key={member.id} member={member} />
+            ))
+          )}
         </div>
       </motion.div>
 

@@ -116,4 +116,59 @@ describe('CreateAgentDialog', () => {
         expect(onOpenChange).toHaveBeenCalledWith(false);
         expect(onSubmit).not.toHaveBeenCalled();
     });
+
+    // Issue #108: the dialog must not close or reset the form when the
+    // submission fails (e.g. a 401 from the backend) -- it should stay open,
+    // keep the user's input, and show a visible error.
+    it('stays open with an error banner and the entered name intact when onSubmit rejects', async () => {
+        const user = userEvent.setup();
+        const onSubmit = vi.fn().mockRejectedValue(new Error('Not authenticated'));
+        const onOpenChange = vi.fn();
+
+        render(<CreateAgentDialog open onOpenChange={onOpenChange} onSubmit={onSubmit} />);
+
+        await user.type(screen.getByLabelText('Name'), 'My Agent');
+        await user.click(screen.getByRole('button', { name: 'Create' }));
+
+        expect(await screen.findByText('Not authenticated')).toBeInTheDocument();
+        expect(onOpenChange).not.toHaveBeenCalled();
+        expect(screen.getByLabelText('Name')).toHaveValue('My Agent');
+    });
+
+    it('shows a loading state and disables the submit button while isSubmitting is true', () => {
+        render(
+            <CreateAgentDialog
+                open
+                onOpenChange={vi.fn()}
+                onSubmit={vi.fn()}
+                isSubmitting
+            />
+        );
+
+        // While submitting the button's accessible name temporarily changes
+        // from "Create" to "Creating..." -- look it up by its submit role
+        // instead of the old label.
+        const buttons = screen.getAllByRole('button');
+        const submitButton = buttons.find((b) => b.getAttribute('type') === 'submit');
+        expect(submitButton).toBeDisabled();
+        expect(screen.getByText('Creating...')).toBeInTheDocument();
+    });
+
+    it('offers a Retry action in the error banner that resubmits the same data', async () => {
+        const user = userEvent.setup();
+        const onSubmit = vi.fn().mockRejectedValueOnce(new Error('Not authenticated'))
+            .mockResolvedValueOnce(undefined);
+        const onOpenChange = vi.fn();
+
+        render(<CreateAgentDialog open onOpenChange={onOpenChange} onSubmit={onSubmit} />);
+
+        await user.type(screen.getByLabelText('Name'), 'My Agent');
+        await user.click(screen.getByRole('button', { name: 'Create' }));
+        expect(await screen.findByText('Not authenticated')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+        expect(onSubmit).toHaveBeenCalledTimes(2);
+        expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
 });

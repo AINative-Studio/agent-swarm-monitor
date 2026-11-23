@@ -21,14 +21,24 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Loader2 } from 'lucide-react';
+import ListErrorState from '@/components/openclaw/ListErrorState';
 import type { CreateAgentRequest, HeartbeatInterval, OpenClawTemplate } from '@/types/openclaw';
 import { MODEL_OPTIONS, HEARTBEAT_OPTIONS } from '@/lib/openclaw-utils';
 
 interface CreateAgentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: CreateAgentRequest) => void;
+  /**
+   * Must return a Promise that resolves on success and rejects on failure --
+   * the dialog awaits it to decide whether to close/reset (success) or stay
+   * open with an error banner and the user's input intact (failure). See
+   * issue #108.
+   */
+  onSubmit: (data: CreateAgentRequest) => Promise<unknown>;
   template?: OpenClawTemplate | null;
+  /** Mutation pending state, surfaced as a disabled/loading submit button. */
+  isSubmitting?: boolean;
 }
 
 export default function CreateAgentDialog({
@@ -36,6 +46,7 @@ export default function CreateAgentDialog({
   onOpenChange,
   onSubmit,
   template,
+  isSubmitting = false,
 }: CreateAgentDialogProps) {
   const [name, setName] = useState('');
   const [model, setModel] = useState('anthropic/claude-opus-4-5');
@@ -43,6 +54,7 @@ export default function CreateAgentDialog({
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(false);
   const [heartbeatInterval, setHeartbeatInterval] = useState('5m');
   const [checklist, setChecklist] = useState('');
+  const [submitError, setSubmitError] = useState<unknown>(null);
 
   useEffect(() => {
     if (template) {
@@ -62,11 +74,24 @@ export default function CreateAgentDialog({
       setHeartbeatInterval('5m');
       setChecklist('');
     }
+    setSubmitError(null);
   }, [template]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const resetForm = () => {
+    setName('');
+    setModel('anthropic/claude-opus-4-5');
+    setPersona('');
+    setHeartbeatEnabled(false);
+    setHeartbeatInterval('5m');
+    setChecklist('');
+    setSubmitError(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+
+    setSubmitError(null);
 
     const checklistItems = checklist
       .split('\n')
@@ -87,15 +112,16 @@ export default function CreateAgentDialog({
       };
     }
 
-    onSubmit(data);
-
-    setName('');
-    setModel('anthropic/claude-opus-4-5');
-    setPersona('');
-    setHeartbeatEnabled(false);
-    setHeartbeatInterval('5m');
-    setChecklist('');
-    onOpenChange(false);
+    try {
+      await onSubmit(data);
+      // Only clear the form and close the dialog on confirmed success --
+      // see issue #108. On failure, the form stays open with the user's
+      // input intact and an error banner below.
+      resetForm();
+      onOpenChange(false);
+    } catch (error) {
+      setSubmitError(error);
+    }
   };
 
   const isValid = name.trim().length > 0;
@@ -116,6 +142,13 @@ export default function CreateAgentDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {submitError != null && (
+            <ListErrorState
+              error={submitError}
+              onRetry={() => handleSubmit({ preventDefault: () => {} } as React.FormEvent)}
+            />
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="agent-name" className="text-gray-700 text-sm">
               Name
@@ -125,6 +158,7 @@ export default function CreateAgentDialog({
               placeholder="My Agent"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              disabled={isSubmitting}
               className="bg-white border-gray-200 text-gray-900 placeholder:text-gray-400"
               autoFocus
             />
@@ -134,7 +168,7 @@ export default function CreateAgentDialog({
             <Label htmlFor="agent-model" className="text-gray-700 text-sm">
               Model
             </Label>
-            <Select value={model} onValueChange={setModel}>
+            <Select value={model} onValueChange={setModel} disabled={isSubmitting}>
               <SelectTrigger
                 id="agent-model"
                 className="bg-white border-gray-200 text-gray-900"
@@ -164,6 +198,7 @@ export default function CreateAgentDialog({
               placeholder="Describe the agent's role and behavior..."
               value={persona}
               onChange={(e) => setPersona(e.target.value)}
+              disabled={isSubmitting}
               rows={4}
               className="bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 resize-none"
             />
@@ -179,6 +214,7 @@ export default function CreateAgentDialog({
                 id="heartbeat-toggle"
                 checked={heartbeatEnabled}
                 onCheckedChange={setHeartbeatEnabled}
+                disabled={isSubmitting}
               />
             </div>
 
@@ -231,16 +267,24 @@ export default function CreateAgentDialog({
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
               className="border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={!isValid}
+              disabled={!isValid || isSubmitting}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
-              Create
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                'Create'
+              )}
             </Button>
           </DialogFooter>
         </form>
