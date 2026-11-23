@@ -9,6 +9,8 @@ import { fadeUp } from '@/lib/openclaw-utils';
 import AgentPicker from '@/components/openclaw/AgentPicker';
 import IntegrationRow from '@/components/openclaw/IntegrationRow';
 import ListErrorState from '@/components/openclaw/ListErrorState';
+import ComingSoonModal from '@/components/openclaw/ComingSoonModal';
+import type { Integration } from '@/types/openclaw';
 
 export default function OpenClawIntegrationsClient() {
   const { data, isError, error, refetch } = useAgentList();
@@ -16,6 +18,12 @@ export default function OpenClawIntegrationsClient() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(
     agents[0]?.id
   );
+
+  // Coming-soon modal state: neither Gmail nor LinkedIn has a real connect
+  // flow built yet (no backend endpoint — see lib/openclaw-service.ts), so
+  // both use the same honest "Coming Soon" pattern as Microsoft Teams on
+  // the Channels page rather than a silent no-op.
+  const [comingSoonIntegration, setComingSoonIntegration] = useState<Integration | null>(null);
 
   // Update selection when agents load
   useEffect(() => {
@@ -83,13 +91,18 @@ export default function OpenClawIntegrationsClient() {
             <IntegrationRow
               key={integration.id}
               integration={integration}
-              onConnect={() => {
-                // Connection logic would go here
-              }}
+              onConnect={() => setComingSoonIntegration(integration)}
             />
           ))}
         </div>
       </motion.div>
+
+      {/* Coming Soon Modal — shared for every integration until a real connect flow ships */}
+      <ComingSoonModal
+        open={comingSoonIntegration !== null}
+        onOpenChange={(open) => !open && setComingSoonIntegration(null)}
+        channelName={comingSoonIntegration?.name ?? ''}
+      />
     </div>
   );
 }
