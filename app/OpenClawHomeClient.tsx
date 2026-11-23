@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { AlertTriangle } from 'lucide-react';
 import { useAgentList } from '@/hooks/useOpenClawAgents';
 import { useSwarmHealth, useTimeline } from '@/hooks/useMonitoring';
 import { useTemplateList } from '@/hooks/useTemplates';
@@ -37,9 +38,11 @@ interface StatCardProps {
   label: string;
   value: string | number;
   index: number;
+  /** Shown under the value when this stat's confidence is reduced by a related failure. */
+  caveat?: string;
 }
 
-function StatCard({ label, value, index }: StatCardProps) {
+function StatCard({ label, value, index, caveat }: StatCardProps) {
   return (
     <motion.div
       custom={index}
@@ -51,7 +54,15 @@ function StatCard({ label, value, index }: StatCardProps) {
       <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
         {label}
       </span>
-      <span className="text-2xl font-bold text-gray-900">{value}</span>
+      <span className={caveat ? 'text-2xl font-bold text-gray-400' : 'text-2xl font-bold text-gray-900'}>
+        {value}
+      </span>
+      {caveat && (
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600">
+          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
+          {caveat}
+        </span>
+      )}
     </motion.div>
   );
 }
@@ -111,10 +122,27 @@ export default function OpenClawHomeClient() {
       ? health.status.charAt(0).toUpperCase() + health.status.slice(1)
       : '--';
 
+  // The agent roster failed to load, so any stat that depends on it (directly,
+  // like Total Agents, or implicitly, like a swarm health rollup computed
+  // without agent data) shouldn't read as confidently correct. See #118.
+  const agentDataUnavailable = isError;
+
   const stats = [
-    { label: 'Total Agents', value: agents.length },
-    { label: 'Running', value: runningCount },
-    { label: 'Swarm Health', value: healthLabel },
+    {
+      label: 'Total Agents',
+      value: agentDataUnavailable ? '--' : agents.length,
+      caveat: agentDataUnavailable ? 'Unavailable' : undefined,
+    },
+    {
+      label: 'Running',
+      value: agentDataUnavailable ? '--' : runningCount,
+      caveat: agentDataUnavailable ? 'Unavailable' : undefined,
+    },
+    {
+      label: 'Swarm Health',
+      value: healthLabel,
+      caveat: agentDataUnavailable ? 'Partial data' : undefined,
+    },
     { label: 'Active Events', value: timeline?.totalCount ?? 0 },
   ];
 
@@ -141,6 +169,7 @@ export default function OpenClawHomeClient() {
             label={stat.label}
             value={stat.value}
             index={i}
+            caveat={stat.caveat}
           />
         ))}
       </div>

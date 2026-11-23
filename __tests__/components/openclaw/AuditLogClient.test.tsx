@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AuditLogClient from '@/app/audit-log/AuditLogClient';
-import type { AuditEvent, AuditEventListResponse, OpenClawAgentListResponse } from '@/types/openclaw';
+import type { AuditEvent, AuditEventListResponse } from '@/types/openclaw';
 
 vi.mock('@/hooks/useAuditLog', () => ({
   useAuditEvents: vi.fn(),
@@ -10,15 +10,9 @@ vi.mock('@/hooks/useAuditLog', () => ({
   useUpdateSettings: vi.fn(),
 }));
 
-vi.mock('@/hooks/useOpenClawAgents', () => ({
-  useAgentList: vi.fn(),
-}));
-
 import { useAuditEvents } from '@/hooks/useAuditLog';
-import { useAgentList } from '@/hooks/useOpenClawAgents';
 
 const mockUseAuditEvents = vi.mocked(useAuditEvents);
-const mockUseAgentList = vi.mocked(useAgentList);
 
 function renderWithQueryClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({
@@ -54,41 +48,9 @@ function buildEventsResponse(events: AuditEvent[]): AuditEventListResponse {
   return { events, total: events.length, limit: 50, offset: 0 };
 }
 
-const mockAgentsResponse: OpenClawAgentListResponse = {
-  agents: [
-    {
-      id: 'agent-001',
-      name: 'Linear Ticket Solver',
-      persona: null,
-      model: 'anthropic/claude-opus-4-5',
-      userId: 'user-001',
-      status: 'running',
-      openclawSessionKey: null,
-      openclawAgentId: null,
-      heartbeatEnabled: false,
-      heartbeatInterval: null,
-      heartbeatChecklist: null,
-      lastHeartbeatAt: null,
-      nextHeartbeatAt: null,
-      configuration: null,
-      errorMessage: null,
-      errorCount: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: null,
-      provisionedAt: null,
-      pausedAt: null,
-      stoppedAt: null,
-    },
-  ],
-  total: 1,
-  limit: 50,
-  offset: 0,
-};
-
 describe('AuditLogClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseAgentList.mockReturnValue({ data: mockAgentsResponse } as any);
     mockUseAuditEvents.mockReturnValue({
       data: buildEventsResponse(mockEvents),
       isLoading: false,
@@ -145,6 +107,22 @@ describe('AuditLogClient', () => {
       const lastCallArgs = mockUseAuditEvents.mock.calls.at(-1)?.[0];
       expect(lastCallArgs).toMatchObject({ eventType: 'heartbeat_failed' });
     });
+  });
+
+  it('populates the Agent filter from the audit events mock data, not a live agent list', async () => {
+    renderWithQueryClient(<AuditLogClient />);
+
+    const trigger = screen.getByLabelText(/filter by agent/i);
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    const listbox = await screen.findByRole('listbox');
+
+    // These are the agent names baked into MOCK_AUDIT_EVENTS (lib/audit-log-mock-data.ts),
+    // i.e. the same source that populates the Events table — not an unrelated agents API.
+    expect(within(listbox).getByText('Linear Ticket Solver')).toBeInTheDocument();
+    expect(within(listbox).getByText('Team Slack Engineer')).toBeInTheDocument();
+    expect(within(listbox).getByText('Atlas')).toBeInTheDocument();
+    expect(within(listbox).getByText('Debo')).toBeInTheDocument();
   });
 
   it('shows a clear filters action once a filter is applied and resets on click', async () => {

@@ -186,6 +186,26 @@ export const MOCK_AUDIT_EVENTS: AuditEvent[] = [
   },
 ];
 
+export interface AuditEventAgentOption {
+  id: string;
+  name: string;
+}
+
+/**
+ * Distinct agents actually referenced by MOCK_AUDIT_EVENTS, in first-seen
+ * order. Used to populate the Agent filter so its options always match
+ * the agents that can actually appear in the Events table (see #117).
+ */
+export const MOCK_AUDIT_EVENT_AGENTS: AuditEventAgentOption[] = Array.from(
+  MOCK_AUDIT_EVENTS.reduce((map, event) => {
+    if (event.agentId && event.agentName && !map.has(event.agentId)) {
+      map.set(event.agentId, event.agentName);
+    }
+    return map;
+  }, new Map<string, string>()),
+  ([id, name]) => ({ id, name })
+);
+
 export const MOCK_SETTINGS: OpenClawSettings = {
   gateway: {
     port: 8787,

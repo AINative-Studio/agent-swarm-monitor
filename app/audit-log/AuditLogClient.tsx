@@ -4,8 +4,8 @@ import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Clock } from 'lucide-react';
 import { useAuditEvents } from '@/hooks/useAuditLog';
-import { useAgentList } from '@/hooks/useOpenClawAgents';
 import { fadeUp } from '@/lib/openclaw-utils';
+import { MOCK_AUDIT_EVENT_AGENTS } from '@/lib/audit-log-mock-data';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -37,9 +37,6 @@ export default function AuditLogClient() {
   const [agentId, setAgentId] = useState<string>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-
-  const { data: agentsData } = useAgentList();
-  const agents = agentsData?.agents ?? [];
 
   const filters = useMemo(
     () => ({
@@ -111,7 +108,7 @@ export default function AuditLogClient() {
             </SelectTrigger>
             <SelectContent className="bg-white border-gray-200">
               <SelectItem value="all">All agents</SelectItem>
-              {agents.map((agent) => (
+              {MOCK_AUDIT_EVENT_AGENTS.map((agent) => (
                 <SelectItem key={agent.id} value={agent.id}>
                   {agent.name}
                 </SelectItem>
