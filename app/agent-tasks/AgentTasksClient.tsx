@@ -146,7 +146,6 @@ export default function AgentTasksClient() {
                     animate="visible"
                     className="rounded-lg border border-[#E8E6E1] bg-white p-6"
                 >
-                    <h2 className="text-lg font-semibold mb-4">Create New Task</h2>
                     <TaskCreateForm onSuccess={handleTaskCreated} />
                 </motion.div>
             )}
