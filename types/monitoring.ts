@@ -84,6 +84,8 @@ export interface MonitoringStatus {
 }
 
 export interface PrometheusMetricsSnapshot {
+    /** ISO 8601 timestamp of when this snapshot was fetched/parsed on the client. */
+    timestamp: string;
     taskAssignmentTotal: number;
     taskAssignmentRejectedTotal: number;
     taskResultSubmittedTotal: number;

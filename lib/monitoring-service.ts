@@ -47,6 +47,7 @@ class MonitoringService {
         const m = parsed.metrics;
         const v = (name: string) => getMetricValue(m, name) ?? 0;
         return {
+            timestamp: new Date().toISOString(),
             taskAssignmentTotal: v('openclaw_task_assignment'),
             taskAssignmentRejectedTotal: v('openclaw_task_assignment_rejected'),
             taskResultSubmittedTotal: v('openclaw_task_result_submitted'),
