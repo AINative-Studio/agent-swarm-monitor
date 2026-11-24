@@ -35,7 +35,7 @@ interface ChannelAuthDialogProps {
 const BOT_TOKEN_FORMATS: Record<string, { pattern: RegExp; hint: string }> = {
   telegram: {
     pattern: /^\d+:[\w-]{35}$/,
-    hint: "Telegram bot tokens look like 123456789:ABCdefGHIjklMNOpqrsTUVwxyz0123456 -- a numeric bot ID, a colon, then a 35-character token from @BotFather.",
+    hint: "Telegram bot tokens look like 123456789:ABCdefGHIjklMNOpqrsTUVwxyz012345678 -- a numeric bot ID, a colon, then a 35-character token from @BotFather.",
   },
   discord: {
     pattern: /^[\w-]{20,}\.[\w-]{6,}\.[\w-]{20,}$/,

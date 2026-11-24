@@ -153,6 +153,42 @@ describe('TokenConnectionModal', () => {
     });
   });
 
+  it('accepts the exact example token shown in its own Telegram hint text (issue #150)', async () => {
+    const user = userEvent.setup();
+    const onConnect = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <TokenConnectionModal
+        open={true}
+        onOpenChange={vi.fn()}
+        onConnect={onConnect}
+        channelType="telegram"
+        channelName="Telegram"
+      />
+    );
+
+    // Trigger the hint by submitting something invalid first, then read the
+    // example token straight out of the rendered hint text so this test
+    // fails again if the example and the regex ever drift apart.
+    await user.type(screen.getByLabelText('Bot Token'), 'garbage');
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    const hint = await screen.findByText(/Telegram bot tokens look like/i);
+    const match = hint.textContent?.match(/(\d+:[\w-]+)\s+--/);
+    expect(match).not.toBeNull();
+    const exampleToken = match![1];
+
+    await user.clear(screen.getByLabelText('Bot Token'));
+    await user.type(screen.getByLabelText('Bot Token'), exampleToken);
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => {
+      expect(onConnect).toHaveBeenCalledWith({
+        botToken: exampleToken,
+        botUsername: undefined,
+      });
+    });
+  });
+
   it('still requires a non-empty token before checking format', async () => {
     const user = userEvent.setup();
     const onConnect = vi.fn().mockResolvedValue(undefined);

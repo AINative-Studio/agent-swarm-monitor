@@ -137,6 +137,41 @@ describe('ChannelAuthDialog', () => {
             );
             expect(openClawService.addChannelBotToken).not.toHaveBeenCalled();
         });
+
+        // Issue #150: the example token quoted in this same error hint was
+        // itself 33 chars after the colon while the regex demanded 35, so the
+        // error message contradicted the very example it showed. Regression:
+        // pull the example token straight out of the hint text that was just
+        // shown, and confirm it is accepted on resubmission.
+        it('accepts the exact example token shown in its own error hint (issue #150)', async () => {
+            const user = userEvent.setup();
+            vi.mocked(openClawService.addChannelBotToken).mockResolvedValue({ ok: true });
+            render(<ChannelAuthDialog {...defaultProps} />);
+
+            await user.type(screen.getByLabelText('Bot Token'), 'not-a-valid-token');
+            await user.click(screen.getByRole('button', { name: 'Connect' }));
+
+            await waitFor(() => expect(toastMock).toHaveBeenCalled());
+            const invalidCall = toastMock.mock.calls.find(
+                (call) => call[0]?.title === 'Invalid token format'
+            );
+            expect(invalidCall).toBeDefined();
+            const description: string = invalidCall![0].description;
+            const match = description.match(/(\d+:[\w-]+)\s+--/);
+            expect(match).not.toBeNull();
+            const exampleToken = match![1];
+
+            await user.clear(screen.getByLabelText('Bot Token'));
+            await user.type(screen.getByLabelText('Bot Token'), exampleToken);
+            await user.click(screen.getByRole('button', { name: 'Connect' }));
+
+            await waitFor(() =>
+                expect(openClawService.addChannelBotToken).toHaveBeenCalledWith({
+                    channel: 'telegram',
+                    token: exampleToken,
+                })
+            );
+        });
     });
 
     describe('oauth auth (Slack)', () => {

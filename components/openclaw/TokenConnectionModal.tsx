@@ -35,9 +35,9 @@ const TOKEN_FORMATS: Record<
   { pattern: RegExp; hint: string }
 > = {
   telegram: {
-    // <bot_id>:<35-char auth token>, e.g. 123456789:ABCdefGHIjklMNOpqrsTUVwxyz0123456
+    // <bot_id>:<35-char auth token>, e.g. 123456789:ABCdefGHIjklMNOpqrsTUVwxyz012345678
     pattern: /^\d+:[\w-]{35}$/,
-    hint: "Telegram bot tokens look like 123456789:ABCdefGHIjklMNOpqrsTUVwxyz0123456 -- a numeric bot ID, a colon, then a 35-character token from @BotFather.",
+    hint: "Telegram bot tokens look like 123456789:ABCdefGHIjklMNOpqrsTUVwxyz012345678 -- a numeric bot ID, a colon, then a 35-character token from @BotFather.",
   },
   discord: {
     // Three base64url-ish segments separated by dots (standard Discord bot token shape).
