@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import SettingsClient from '@/app/settings/SettingsClient';
+import { Toaster } from '@/components/ui/toaster';
 import type { OpenClawSettings } from '@/types/openclaw';
 
 vi.mock('next/link', () => ({
@@ -22,6 +23,30 @@ import { useSettings, useUpdateSettings } from '@/hooks/useAuditLog';
 
 const mockUseSettings = vi.mocked(useSettings);
 const mockUseUpdateSettings = vi.mocked(useUpdateSettings);
+
+// Minimal localStorage mock -- jsdom provides a real one, but we want a
+// clean, inspectable store per test for the notification-persistence tests
+// (issue #128) without leaking state between tests.
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => {
+      store[key] = value;
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+  };
+})();
+
+Object.defineProperty(window, 'localStorage', {
+  value: localStorageMock,
+  writable: true,
+});
 
 function renderWithQueryClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({
@@ -45,6 +70,7 @@ describe('SettingsClient', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorageMock.clear();
     mutateAsync.mockResolvedValue(mockSettings);
     mockUseSettings.mockReturnValue({ data: mockSettings, isLoading: false } as any);
     mockUseUpdateSettings.mockReturnValue({ mutateAsync, isPending: false } as any);
@@ -120,6 +146,43 @@ describe('SettingsClient', () => {
       fireEvent.click(screen.getByRole('button', { name: 'View Sessions' }));
 
       expect(screen.getByText('Active sessions - Coming Soon')).toBeInTheDocument();
+    });
+  });
+
+  describe('Notification toggles persistence (issue #128)', () => {
+    it('persists a toggle change to localStorage so it survives a reload', () => {
+      const { unmount } = renderWithQueryClient(<SettingsClient />);
+
+      const weeklyDigestSwitch = screen.getByLabelText('Weekly digest');
+      expect(weeklyDigestSwitch).not.toBeChecked();
+
+      fireEvent.click(weeklyDigestSwitch);
+      expect(weeklyDigestSwitch).toBeChecked();
+
+      const stored = JSON.parse(
+        window.localStorage.getItem('openclaw_notification_settings') ?? '{}'
+      );
+      expect(stored.weeklyDigest).toBe(true);
+
+      // Simulate a reload: unmount and render a fresh instance, which should
+      // read the persisted value back from localStorage instead of reverting
+      // to the hardcoded default.
+      unmount();
+      renderWithQueryClient(<SettingsClient />);
+      expect(screen.getByLabelText('Weekly digest')).toBeChecked();
+    });
+
+    it('shows a save confirmation toast when a notification toggle changes', async () => {
+      renderWithQueryClient(
+        <>
+          <SettingsClient />
+          <Toaster />
+        </>
+      );
+
+      fireEvent.click(screen.getByLabelText('Agent error alerts'));
+
+      expect(await screen.findByText(/Agent error alerts disabled/i)).toBeInTheDocument();
     });
   });
 });

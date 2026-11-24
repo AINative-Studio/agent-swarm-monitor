@@ -38,6 +38,13 @@ import ComingSoonModal from '@/components/openclaw/ComingSoonModal';
 import { MOCK_API_KEY_PROVIDERS, MOCK_CHANNELS } from '@/lib/openclaw-mock-data';
 import { fadeUp, MODEL_OPTIONS } from '@/lib/openclaw-utils';
 import { useSettings, useUpdateSettings } from '@/hooks/useAuditLog';
+import {
+  loadNotificationSettings,
+  saveNotificationSettings,
+  DEFAULT_NOTIFICATION_SETTINGS,
+  type NotificationSettings,
+} from '@/lib/notification-settings-service';
+import { useToast } from '@/hooks/use-toast';
 import type { GatewayBindMode, OpenClawSettings } from '@/types/openclaw';
 
 const BIND_MODE_OPTIONS: { value: GatewayBindMode; label: string }[] = [
@@ -53,6 +60,7 @@ interface ApiKeyEntry {
 }
 
 export default function SettingsClient() {
+  const { toast } = useToast();
   const [workspaceName, setWorkspaceName] = useState('AINative Studio');
   const [workspaceSlug, setWorkspaceSlug] = useState('ainative-studio');
   const [defaultModel, setDefaultModel] = useState('anthropic/claude-opus-4-5');
@@ -63,10 +71,31 @@ export default function SettingsClient() {
   const [newKeyProvider, setNewKeyProvider] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
 
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [agentErrorAlerts, setAgentErrorAlerts] = useState(true);
-  const [heartbeatFailAlerts, setHeartbeatFailAlerts] = useState(true);
-  const [weeklyDigest, setWeeklyDigest] = useState(false);
+  // Notification toggles persist to localStorage (see
+  // lib/notification-settings-service.ts) so they survive a page reload
+  // instead of silently reverting. Initialized from defaults on the server
+  // render and hydrated from storage on mount to avoid an SSR/client mismatch.
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(
+    DEFAULT_NOTIFICATION_SETTINGS
+  );
+
+  useEffect(() => {
+    setNotificationSettings(loadNotificationSettings());
+  }, []);
+
+  const updateNotificationSetting = (
+    key: keyof NotificationSettings,
+    value: boolean,
+    label: string
+  ) => {
+    const next = { ...notificationSettings, [key]: value };
+    setNotificationSettings(next);
+    saveNotificationSettings(next);
+    toast({
+      title: 'Saved',
+      description: `${label} ${value ? 'enabled' : 'disabled'}.`,
+    });
+  };
 
   const [copiedSlug, setCopiedSlug] = useState(false);
 
@@ -453,8 +482,10 @@ export default function SettingsClient() {
               </p>
             </div>
             <Switch
-              checked={emailNotifications}
-              onCheckedChange={setEmailNotifications}
+              checked={notificationSettings.emailNotifications}
+              onCheckedChange={(checked) =>
+                updateNotificationSetting('emailNotifications', checked, 'Email notifications')
+              }
               aria-label="Email notifications"
             />
           </div>
@@ -469,8 +500,10 @@ export default function SettingsClient() {
               </p>
             </div>
             <Switch
-              checked={agentErrorAlerts}
-              onCheckedChange={setAgentErrorAlerts}
+              checked={notificationSettings.agentErrorAlerts}
+              onCheckedChange={(checked) =>
+                updateNotificationSetting('agentErrorAlerts', checked, 'Agent error alerts')
+              }
               aria-label="Agent error alerts"
             />
           </div>
@@ -485,8 +518,10 @@ export default function SettingsClient() {
               </p>
             </div>
             <Switch
-              checked={heartbeatFailAlerts}
-              onCheckedChange={setHeartbeatFailAlerts}
+              checked={notificationSettings.heartbeatFailAlerts}
+              onCheckedChange={(checked) =>
+                updateNotificationSetting('heartbeatFailAlerts', checked, 'Heartbeat failure alerts')
+              }
               aria-label="Heartbeat failure alerts"
             />
           </div>
@@ -501,8 +536,10 @@ export default function SettingsClient() {
               </p>
             </div>
             <Switch
-              checked={weeklyDigest}
-              onCheckedChange={setWeeklyDigest}
+              checked={notificationSettings.weeklyDigest}
+              onCheckedChange={(checked) =>
+                updateNotificationSetting('weeklyDigest', checked, 'Weekly digest')
+              }
               aria-label="Weekly digest"
             />
           </div>
