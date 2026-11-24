@@ -227,6 +227,57 @@ describe('SemanticSearchUI', () => {
       expect(screen.getByText(/95%/i)).toBeInTheDocument();
     });
 
+    // Issue #130: highlightedContent must never be injected as raw HTML
+    // (no dangerouslySetInnerHTML), since a real backend response could one
+    // day embed arbitrary message content alongside the <mark> markup.
+    it('should render highlighted content as safe text/elements, never executing embedded markup', async () => {
+      const maliciousPayload =
+        '<mark>safe</mark><script>window.__xssFired = true;</script><img src=x onerror="window.__xssFired = true">';
+      const mockSearchResults = {
+        results: [
+          {
+            id: 'msg-xss',
+            conversationId: 'conv-xss',
+            conversationTitle: 'Untrusted Session',
+            content: 'safe',
+            role: 'user' as const,
+            agentName: 'Dev-Bot',
+            timestamp: '2026-03-08T10:00:00Z',
+            relevanceScore: 0.9,
+            highlightedContent: maliciousPayload,
+          },
+        ],
+        total: 1,
+        limit: 10,
+        offset: 0,
+      };
+      vi.mocked(conversationService.searchMessages).mockResolvedValue(mockSearchResults);
+
+      (window as any).__xssFired = false;
+
+      render(
+        <SemanticSearchUI open={true} onOpenChange={vi.fn()} />,
+        { wrapper: createWrapper() }
+      );
+
+      const input = screen.getByPlaceholderText(/search conversations/i);
+      await user.type(input, 'safe');
+
+      await waitFor(() => {
+        expect(screen.getByText('Untrusted Session')).toBeInTheDocument();
+      }, DEBOUNCE_WAIT_OPTIONS);
+
+      // The <mark>-wrapped segment still renders as a real <mark> element...
+      expect(screen.getByText('safe', { selector: 'mark' })).toBeInTheDocument();
+      // ...but nothing executed: no dangerouslySetInnerHTML means the <script>
+      // never runs and the onerror handler is never wired up as a live attribute.
+      expect((window as any).__xssFired).toBe(false);
+      // And there must be no raw <script> element present as a child of the result
+      // card -- confirming the payload was rendered as inert text, not parsed HTML.
+      expect(document.querySelector('script[src], script:not([src])')).not.toBeInTheDocument();
+      expect(document.body.innerHTML).not.toContain('<script>');
+    });
+
     it('should display "No results" message when query returns empty', async () => {
       const mockSearchResults = {
         results: [],

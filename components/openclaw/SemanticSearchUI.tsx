@@ -29,6 +29,45 @@ const SEARCH_DEBOUNCE_MS = 300;
 const STORAGE_KEY = 'semantic-search-history';
 const PAGE_SIZE = 10;
 
+// Matches a single <mark>...</mark> span. Deliberately narrow (no other
+// tags/attributes) so backend-supplied highlight markup is parsed into
+// plain text + <mark> segments and rendered as real React nodes, never as
+// raw HTML via dangerouslySetInnerHTML -- see issue #130. Anything other
+// than the exact <mark>...</mark> wrapper (including a stray <script> or
+// an on* attribute smuggled into the string) is treated as literal text
+// and rendered escaped, so it can never execute.
+const MARK_PATTERN = /<mark>([\s\S]*?)<\/mark>/g;
+
+/**
+ * Renders search-highlight content as safe React text/element nodes
+ * instead of injecting raw HTML. Splits on <mark>...</mark> spans; every
+ * other character -- including any HTML-looking substring -- is rendered
+ * as plain text, so it is escaped by React and never parsed as markup.
+ */
+function renderHighlightedContent(content: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  MARK_PATTERN.lastIndex = 0;
+  while ((match = MARK_PATTERN.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(
+        <React.Fragment key={key++}>{content.slice(lastIndex, match.index)}</React.Fragment>
+      );
+    }
+    nodes.push(<mark key={key++}>{match[1]}</mark>);
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+    nodes.push(<React.Fragment key={key++}>{content.slice(lastIndex)}</React.Fragment>);
+  }
+
+  return nodes;
+}
+
 interface SemanticSearchUIProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -460,10 +499,9 @@ export default function SemanticSearchUI({
                         </Badge>
                       </div>
 
-                      <div
-                        className="text-sm text-muted-foreground mb-2 line-clamp-2"
-                        dangerouslySetInnerHTML={{ __html: result.highlightedContent }}
-                      />
+                      <div className="text-sm text-muted-foreground mb-2 line-clamp-2">
+                        {renderHighlightedContent(result.highlightedContent)}
+                      </div>
 
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span>{formatRelativeTime(result.timestamp)}</span>
