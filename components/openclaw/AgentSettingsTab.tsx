@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Plus, ExternalLink, Play, RotateCcw, Trash2, X, Clock, Send, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,6 +48,13 @@ interface AgentSettingsTabProps {
   onRunHeartbeat: () => void;
   onRestart: () => void;
   onAgentUpdate?: () => Promise<void>; // Callback to refresh agent data
+  /**
+   * Called whenever the dirty state of the fields covered by "Save Changes"
+   * (name, model, persona, heartbeat enabled/interval/checklist) changes --
+   * lets the parent (which owns the Save Changes button) show an "unsaved
+   * changes" indicator. See issue #141.
+   */
+  onDirtyChange?: (isDirty: boolean) => void;
 }
 
 export default function AgentSettingsTab({
@@ -57,6 +64,7 @@ export default function AgentSettingsTab({
   onRunHeartbeat,
   onRestart,
   onAgentUpdate,
+  onDirtyChange,
 }: AgentSettingsTabProps) {
   const { toast } = useToast();
 
@@ -103,6 +111,41 @@ export default function AgentSettingsTab({
   const [heartbeatChecklist, setHeartbeatChecklist] = useState(
     agent.heartbeatChecklist?.join('\n') ?? ''
   );
+
+  // Dirty-state tracking for issue #141: covers exactly the fields
+  // "Save Changes" persists (see handleSave below), compared against the
+  // values this tab was initialized from. Navigating away (sidebar link,
+  // tab close, refresh) before saving previously discarded edits with zero
+  // warning.
+  const isDirty = useMemo(() => {
+    const originalChecklist = agent.heartbeatChecklist?.join('\n') ?? '';
+    return (
+      model !== agent.model ||
+      persona.trim() !== (agent.persona ?? '').trim() ||
+      heartbeatEnabled !== agent.heartbeatEnabled ||
+      heartbeatInterval !== (agent.heartbeatInterval ?? '5m') ||
+      heartbeatChecklist !== originalChecklist
+    );
+  }, [agent, model, persona, heartbeatEnabled, heartbeatInterval, heartbeatChecklist]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  // Tab-close/refresh guard -- in-app App Router navigation interception has
+  // no built-in route-change-block hook, so this covers the browser-level
+  // half of #141; in-app nav (sidebar links) is covered by the visible
+  // "Unsaved changes" indicator the parent renders instead.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
+
   const [fixPrompt, setFixPrompt] = useState('');
   const [isSendingFixPrompt, setIsSendingFixPrompt] = useState(false);
 

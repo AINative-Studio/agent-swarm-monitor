@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Pause, Play, Sparkles } from 'lucide-react';
+import { ArrowLeft, CircleDot, Pause, Play, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
@@ -52,6 +52,13 @@ export default function OpenClawAgentDetailClient({
   const deleteAgent = useDeleteAgent();
   const executeHeartbeat = useExecuteHeartbeat();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  // Issue #141: tracks whether the Settings tab has unsaved edits, so the
+  // Save Changes button area can show a visible warning. The beforeunload
+  // guard itself lives in AgentSettingsTab (closer to the fields it covers)
+  // -- this flag only drives the in-app indicator, since Next.js App Router
+  // has no built-in route-change-block hook to intercept sidebar/breadcrumb
+  // navigation.
+  const [isSettingsDirty, setIsSettingsDirty] = useState(false);
 
   const isPaused = agent?.status === 'paused';
 
@@ -166,6 +173,15 @@ export default function OpenClawAgentDetailClient({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {isSettingsDirty && (
+            <span
+              role="status"
+              className="inline-flex items-center gap-1 text-xs font-medium text-amber-700"
+            >
+              <CircleDot className="h-3 w-3" />
+              Unsaved changes
+            </span>
+          )}
           <Button
             variant="outline"
             onClick={handleTogglePause}
@@ -234,6 +250,7 @@ export default function OpenClawAgentDetailClient({
             onAgentUpdate={async () => {
               await refetch();
             }}
+            onDirtyChange={setIsSettingsDirty}
           />
         </TabsContent>
 

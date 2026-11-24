@@ -48,11 +48,13 @@ function renderTab(overrides: Partial<OpenClawAgent> = {}, handlers: Partial<{
     onDelete: () => void;
     onRunHeartbeat: () => void;
     onRestart: () => void;
+    onDirtyChange: (isDirty: boolean) => void;
 }> = {}) {
-    const onSave = handlers.onSave ?? vi.fn();
-    const onDelete = handlers.onDelete ?? vi.fn();
-    const onRunHeartbeat = handlers.onRunHeartbeat ?? vi.fn();
-    const onRestart = handlers.onRestart ?? vi.fn();
+    const onSave = (handlers.onSave ?? vi.fn()) as ReturnType<typeof vi.fn>;
+    const onDelete = (handlers.onDelete ?? vi.fn()) as ReturnType<typeof vi.fn>;
+    const onRunHeartbeat = (handlers.onRunHeartbeat ?? vi.fn()) as ReturnType<typeof vi.fn>;
+    const onRestart = (handlers.onRestart ?? vi.fn()) as ReturnType<typeof vi.fn>;
+    const onDirtyChange = (handlers.onDirtyChange ?? vi.fn()) as ReturnType<typeof vi.fn>;
 
     render(
         <AgentSettingsTab
@@ -61,10 +63,11 @@ function renderTab(overrides: Partial<OpenClawAgent> = {}, handlers: Partial<{
             onDelete={onDelete}
             onRunHeartbeat={onRunHeartbeat}
             onRestart={onRestart}
+            onDirtyChange={onDirtyChange}
         />
     );
 
-    return { onSave, onDelete, onRunHeartbeat, onRestart };
+    return { onSave, onDelete, onRunHeartbeat, onRestart, onDirtyChange };
 }
 
 describe('AgentSettingsTab', () => {
@@ -200,5 +203,64 @@ describe('AgentSettingsTab', () => {
         // model in the full 70+-model catalog (e.g. Groq's Llama options).
         expect(screen.getByRole('option', { name: /Claude Opus 4\.5/i })).toBeInTheDocument();
         expect(screen.queryByRole('option', { name: /Llama 3\.1 70B/i })).not.toBeInTheDocument();
+    });
+
+    // Issue #141: editing a field and navigating away before clicking "Save
+    // Changes" previously discarded the edit with zero warning. The tab now
+    // tracks dirty state (reported to the parent via onDirtyChange) and
+    // installs a beforeunload guard for tab-close/refresh while dirty.
+    describe('dirty-state tracking (issue #141)', () => {
+        it('reports not dirty on initial render', () => {
+            const { onDirtyChange } = renderTab();
+            expect(onDirtyChange).toHaveBeenCalledWith(false);
+        });
+
+        it('reports dirty after editing the persona field, and clean again if reverted', async () => {
+            const user = userEvent.setup();
+            const { onDirtyChange } = renderTab();
+            onDirtyChange.mockClear();
+
+            const personaField = screen.getByLabelText(/Persona/i);
+            await user.type(personaField, ' extra');
+
+            expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+            await user.clear(personaField);
+            await user.type(personaField, 'A helpful support agent.');
+
+            expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+        });
+
+        it('reports dirty after toggling heartbeat enabled', async () => {
+            const user = userEvent.setup();
+            const { onDirtyChange } = renderTab();
+            onDirtyChange.mockClear();
+
+            await user.click(screen.getByLabelText(/Enable heartbeat/i));
+
+            expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+        });
+
+        it('installs a beforeunload guard only while dirty, and removes it once clean', async () => {
+            const user = userEvent.setup();
+            const addSpy = vi.spyOn(window, 'addEventListener');
+            const removeSpy = vi.spyOn(window, 'removeEventListener');
+
+            renderTab();
+            addSpy.mockClear();
+
+            const personaField = screen.getByLabelText(/Persona/i);
+            await user.type(personaField, ' extra');
+
+            expect(addSpy).toHaveBeenCalledWith('beforeunload', expect.any(Function));
+
+            await user.clear(personaField);
+            await user.type(personaField, 'A helpful support agent.');
+
+            expect(removeSpy).toHaveBeenCalledWith('beforeunload', expect.any(Function));
+
+            addSpy.mockRestore();
+            removeSpy.mockRestore();
+        });
     });
 });
