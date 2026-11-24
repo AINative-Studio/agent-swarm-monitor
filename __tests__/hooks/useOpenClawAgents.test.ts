@@ -3,6 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import openClawService from '@/lib/openclaw-service';
+import { ApiError } from '@/lib/api-client';
 import type { OpenClawAgent } from '@/types/openclaw';
 
 vi.mock('@/lib/openclaw-service', () => ({
@@ -16,6 +17,12 @@ vi.mock('@/lib/openclaw-service', () => ({
         deleteAgent: vi.fn(),
         executeHeartbeat: vi.fn(),
     },
+}));
+
+const mockToast = vi.fn();
+vi.mock('@/hooks/use-toast', () => ({
+    toast: (...args: unknown[]) => mockToast(...args),
+    useToast: () => ({ toast: mockToast }),
 }));
 
 import {
@@ -67,6 +74,7 @@ const mockAgent: OpenClawAgent = {
 describe('useOpenClawAgents hooks', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockToast.mockClear();
     });
 
     describe('useAgentList', () => {
@@ -281,6 +289,50 @@ describe('useOpenClawAgents hooks', () => {
             expect(invalidateSpy).toHaveBeenCalledWith({
                 queryKey: ['openclaw-agent', 'agent-001'],
             });
+        });
+
+        // Issue #145: Run Heartbeat previously gave zero feedback on success
+        // or failure -- no toast either way, and no onError at all (so a
+        // legitimate 409 from the backend was silently swallowed).
+        it('shows a success toast when the heartbeat executes successfully', async () => {
+            vi.mocked(openClawService.executeHeartbeat).mockResolvedValue({
+                status: 'completed',
+                message: 'OK',
+            });
+
+            const { result } = renderHook(() => useExecuteHeartbeat(), {
+                wrapper: createWrapper(),
+            });
+
+            result.current.mutate('agent-001');
+
+            await waitFor(() => expect(result.current.isSuccess).toBe(true));
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({ title: expect.stringMatching(/heartbeat/i) })
+            );
+            expect(mockToast).not.toHaveBeenCalledWith(
+                expect.objectContaining({ variant: 'destructive' })
+            );
+        });
+
+        it('shows an error toast with the backend 409 detail message on failure', async () => {
+            vi.mocked(openClawService.executeHeartbeat).mockRejectedValue(
+                new ApiError(409, 'Heartbeat already in progress')
+            );
+
+            const { result } = renderHook(() => useExecuteHeartbeat(), {
+                wrapper: createWrapper(),
+            });
+
+            result.current.mutate('agent-001');
+
+            await waitFor(() => expect(result.current.isError).toBe(true));
+            expect(mockToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    variant: 'destructive',
+                    description: 'Heartbeat already in progress',
+                })
+            );
         });
     });
 });

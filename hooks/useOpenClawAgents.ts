@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import openClawService from '@/lib/openclaw-service';
 import type { CreateAgentRequest, UpdateAgentSettingsRequest } from '@/types/openclaw';
+import { getErrorMessage } from '@/components/openclaw/ListErrorState';
+import { toast } from '@/hooks/use-toast';
 
 export function useAgentList(status?: string) {
   return useQuery({
@@ -73,12 +75,30 @@ export function useDeleteAgent() {
   });
 }
 
+/**
+ * Runs an agent's heartbeat cycle immediately. Surfaces a toast on both
+ * outcomes -- previously this mutation had no onError at all (so a 409 from
+ * the backend, a legitimate "not due yet" response, was silently swallowed)
+ * and no toast on success either, leaving the user with zero feedback that
+ * anything happened. See issue #145.
+ */
 export function useExecuteHeartbeat() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (agentId: string) => openClawService.executeHeartbeat(agentId),
     onSuccess: (_, agentId) => {
       queryClient.invalidateQueries({ queryKey: ['openclaw-agent', agentId] });
+      toast({
+        title: 'Heartbeat triggered',
+        description: 'The agent heartbeat cycle has been started.',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Heartbeat failed',
+        description: getErrorMessage(error, 'Failed to trigger heartbeat.'),
+        variant: 'destructive',
+      });
     },
   });
 }
