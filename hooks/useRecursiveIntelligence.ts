@@ -162,9 +162,14 @@ function buildLoops(
   ];
 }
 
-function calcClosureScore(loops: LoopHealth[]): number {
+export function calcClosureScore(loops: LoopHealth[]): number {
+  // Each loop is worth 20 points when healthy. A 'degraded' loop earns half
+  // credit (10 points) rather than 0, so it scores distinctly above a fully
+  // 'down' loop — matching the on-screen legend's 60-80 "most loops active,
+  // one or two degraded" band (e.g. 3 healthy + 2 degraded = 60 + 20 = 80).
   const healthyCount = loops.filter((l) => l.status === 'healthy').length;
-  return healthyCount * 20;
+  const degradedCount = loops.filter((l) => l.status === 'degraded').length;
+  return healthyCount * 20 + degradedCount * 10;
 }
 
 // ─── Exported hooks ────────────────────────────────────────────────────────────
