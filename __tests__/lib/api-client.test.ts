@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import apiClient, { ApiError, snakeToCamelKeys, camelToSnakeKeys, onSessionExpired } from '@/lib/api-client';
+import apiClient, {
+    ApiError,
+    snakeToCamelKeys,
+    camelToSnakeKeys,
+    onSessionExpired,
+    normalizeErrorDetail,
+} from '@/lib/api-client';
 
 describe('ApiClient', () => {
     beforeEach(() => {
@@ -88,6 +94,68 @@ describe('ApiClient', () => {
                 expect((e as ApiError).statusCode).toBe(404);
                 expect((e as ApiError).detail).toBe('Not found');
             }
+        });
+
+        it('should normalize a FastAPI/Pydantic 422 structured detail array into a readable string instead of storing the raw array (issue #144)', async () => {
+            // This is FastAPI's actual default shape for a field-level validation
+            // error -- e.g. violating `max_length=255` on the agent name field.
+            vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        detail: [
+                            {
+                                type: 'string_too_long',
+                                loc: ['body', 'name'],
+                                msg: 'String should have at most 255 characters',
+                                input: 'B'.repeat(260),
+                                ctx: { max_length: 255 },
+                            },
+                        ],
+                    }),
+                    { status: 422 }
+                )
+            );
+
+            try {
+                await apiClient.post('/agents', { name: 'B'.repeat(260) });
+                expect.fail('Should have thrown');
+            } catch (e) {
+                expect(e).toBeInstanceOf(ApiError);
+                expect((e as ApiError).statusCode).toBe(422);
+                // Must be a plain string (safe to render as a React child), not
+                // the raw array of {type, loc, msg, input, ctx} objects.
+                expect(typeof (e as ApiError).detail).toBe('string');
+                expect((e as ApiError).detail).toContain('String should have at most 255 characters');
+            }
+        });
+    });
+
+    describe('normalizeErrorDetail (issue #144)', () => {
+        it('passes a plain string detail through unchanged', () => {
+            expect(normalizeErrorDetail('Not found')).toBe('Not found');
+        });
+
+        it('joins multiple Pydantic error objects into one readable string', () => {
+            const detail = [
+                { type: 'missing', loc: ['body', 'name'], msg: 'Field required' },
+                { type: 'string_too_long', loc: ['body', 'persona'], msg: 'String should have at most 500 characters' },
+            ];
+            const result = normalizeErrorDetail(detail);
+            expect(result).toContain('Field required');
+            expect(result).toContain('String should have at most 500 characters');
+        });
+
+        it('extracts msg from a single Pydantic error object (non-array detail)', () => {
+            expect(normalizeErrorDetail({ type: 'missing', loc: ['body', 'name'], msg: 'Field required' })).toBe(
+                'Field required'
+            );
+        });
+
+        it('returns null for an empty array or unrecognized shape so the caller can fall back to its own default', () => {
+            expect(normalizeErrorDetail([])).toBeNull();
+            expect(normalizeErrorDetail(null)).toBeNull();
+            expect(normalizeErrorDetail(undefined)).toBeNull();
+            expect(normalizeErrorDetail({})).toBeNull();
         });
     });
 

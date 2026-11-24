@@ -75,6 +75,58 @@ export class ApiError extends Error {
     }
 }
 
+/**
+ * Shape of a single error object inside FastAPI/Pydantic's structured
+ * validation error array -- the `detail` field on a 422 response is this
+ * array, not a string, whenever a request fails model validation (missing
+ * field, wrong type, length/pattern violation, etc.). See issue #144.
+ */
+interface PydanticErrorDetail {
+    type?: string;
+    loc?: Array<string | number>;
+    msg?: string;
+    input?: unknown;
+    ctx?: Record<string, unknown>;
+}
+
+/**
+ * Normalizes a backend error response's `detail` field into a plain, safe
+ * to render string. FastAPI's default 422 shape is an array of Pydantic
+ * error objects (`{type, loc, msg, input, ctx}`) rather than a string --
+ * passing that array through untouched onto `ApiError.detail` means any
+ * consumer that renders `error.detail` directly as a React child (e.g.
+ * ListErrorState) crashes the whole tree with "Objects are not valid as a
+ * React child". Every shape `detail` can take is coerced here, once, before
+ * it's ever stored -- this protects every consumer of ApiError, not just one
+ * component. Returns null when there's nothing usable to report (caller
+ * falls back to its own default).
+ */
+export function normalizeErrorDetail(detail: unknown): string | null {
+    if (detail == null) return null;
+    if (typeof detail === 'string') return detail;
+
+    if (Array.isArray(detail)) {
+        const messages = (detail as PydanticErrorDetail[])
+            .map((entry) => {
+                if (typeof entry === 'string') return entry;
+                if (entry && typeof entry === 'object' && typeof entry.msg === 'string') {
+                    const field = Array.isArray(entry.loc) ? entry.loc.at(-1) : undefined;
+                    return field ? `${field}: ${entry.msg}` : entry.msg;
+                }
+                return null;
+            })
+            .filter((msg): msg is string => Boolean(msg));
+        return messages.length > 0 ? messages.join('; ') : null;
+    }
+
+    if (typeof detail === 'object') {
+        const entry = detail as PydanticErrorDetail;
+        if (typeof entry.msg === 'string') return entry.msg;
+    }
+
+    return null;
+}
+
 export class ApiTimeoutError extends Error {
     constructor(
         public url: string,
@@ -278,7 +330,7 @@ class ApiClient {
             let detail = `HTTP ${response.status}`;
             try {
                 const body = await response.json();
-                detail = body.detail || detail;
+                detail = normalizeErrorDetail(body.detail) ?? detail;
             } catch {
                 // Use default detail
             }
