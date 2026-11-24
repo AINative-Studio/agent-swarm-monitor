@@ -75,6 +75,20 @@ export default function AgentSettingsTab({
 
   const [name, setName] = useState(agent.name);
   const [model, setModel] = useState(agent.model);
+
+  // MODEL_OPTIONS (lib/model-catalog.ts) covers 70+ known model slugs, but a
+  // real agent's model may still not be in that list (e.g. a newer slug that
+  // hasn't been added to the catalog yet). Radix's Select/SelectValue renders
+  // blank whenever its controlled `value` doesn't match any SelectItem, so
+  // inject the agent's actual model as an extra option when it's unrecognized
+  // -- this guarantees the dropdown always displays the real value instead of
+  // going blank. See issue #123.
+  const modelOptions = useMemo(() => {
+    if (MODEL_OPTIONS.some((opt) => opt.value === agent.model)) {
+      return MODEL_OPTIONS;
+    }
+    return [{ value: agent.model, label: agent.model }, ...MODEL_OPTIONS];
+  }, [agent.model]);
   const [persona, setPersona] = useState(agent.persona ?? '');
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(agent.heartbeatEnabled);
   const [heartbeatInterval, setHeartbeatInterval] = useState<HeartbeatInterval>(
@@ -513,7 +527,7 @@ export default function AgentSettingsTab({
               </div>
             </SelectTrigger>
             <SelectContent className="bg-white border-gray-200">
-              {MODEL_OPTIONS.map((opt) => (
+              {modelOptions.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value} className="text-gray-900 text-sm">
                   {opt.label}
                 </SelectItem>

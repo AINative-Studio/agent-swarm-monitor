@@ -155,4 +155,19 @@ describe('AgentSettingsTab', () => {
 
         expect(screen.getByRole('button', { name: /open control ui/i })).toBeEnabled();
     });
+
+    it('shows the real model text in the Model dropdown for a model slug not in the known catalog (issue #123)', () => {
+        // 'anthropic/claude-sonnet-4-5' is a real slug returned by the live
+        // backend but is not one of the hardcoded/catalog model options --
+        // the dropdown must display it rather than rendering blank.
+        renderTab({ model: 'anthropic/claude-sonnet-4-5' });
+
+        expect(screen.getByLabelText(/^Model$/i)).toHaveTextContent('anthropic/claude-sonnet-4-5');
+    });
+
+    it('shows a known model slug correctly in the Model dropdown (no regression)', () => {
+        renderTab({ model: 'anthropic/claude-opus-4-5' });
+
+        expect(screen.getByLabelText(/^Model$/i)).toHaveTextContent(/Claude Opus 4\.5/i);
+    });
 });

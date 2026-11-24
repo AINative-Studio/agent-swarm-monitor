@@ -1,4 +1,5 @@
 import type { HeartbeatInterval } from '@/types/openclaw';
+import { MODEL_CATALOG, formatModelShort as formatModelShortFromCatalog } from '@/lib/model-catalog';
 
 export function formatRelativeTime(dateStr: string | null): string {
   if (!dateStr) return '--';
@@ -23,6 +24,12 @@ export function formatHeartbeatInterval(interval: string | null): string {
   return map[interval] ?? interval;
 }
 
+// formatModelShort preserves its own (pre-existing) formatting logic here --
+// it's used across the app (home list, agent detail subtitle) to render a
+// real agent's model slug and already handles slugs not in MODEL_CATALOG
+// (e.g. 'anthropic/claude-sonnet-4-5') via simple string replacement rather
+// than a catalog lookup. Kept local rather than re-exported from
+// model-catalog.ts to avoid changing this already-correct display behavior.
 export function formatModelShort(model: string): string {
   const parts = model.split('/');
   const name = parts[parts.length - 1];
@@ -34,19 +41,16 @@ export function formatModelShort(model: string): string {
     .replace('gemini-2.0-flash', 'Gemini 2.0 Flash');
 }
 
-export const MODEL_OPTIONS = [
-  { value: 'anthropic/claude-opus-4-5', label: 'Claude Opus 4.5' },
-  { value: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4' },
-  { value: 'openai/gpt-4o', label: 'GPT-4o' },
-  { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-] as const;
+// MODEL_OPTIONS / MODEL_OPTIONS_RAW now re-export the full catalog from
+// lib/model-catalog.ts (70+ models across 11 providers) instead of the old
+// 4-slug hardcoded list, so real agents' models match an actual SelectItem.
+// See issue #106 ("wire lib/model-catalog.ts into the model selector") and
+// issue #123 (blank Model dropdown caused by the old hardcoded list).
+export const MODEL_OPTIONS = MODEL_CATALOG.flatMap((provider) =>
+  provider.models.map((m) => ({ value: m.value, label: m.label }))
+);
 
-export const MODEL_OPTIONS_RAW = [
-  { value: 'anthropic/claude-opus-4-5', label: 'anthropic/claude-opus-4-5' },
-  { value: 'anthropic/claude-sonnet-4', label: 'anthropic/claude-sonnet-4' },
-  { value: 'openai/gpt-4o', label: 'openai/gpt-4o' },
-  { value: 'google/gemini-2.0-flash', label: 'google/gemini-2.0-flash' },
-] as const;
+export const MODEL_OPTIONS_RAW = MODEL_OPTIONS;
 
 export const HEARTBEAT_OPTIONS: { value: HeartbeatInterval; label: string }[] = [
   { value: '5m', label: 'Every 5 min' },
