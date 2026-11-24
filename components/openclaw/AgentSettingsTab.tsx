@@ -27,9 +27,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import type { OpenClawAgent, UpdateAgentSettingsRequest, HeartbeatInterval, Integration } from '@/types/openclaw';
-import type { AgentConfiguration, ActiveHours } from '@/types/agent-configuration';
+import type { AgentConfiguration, ActiveHours, ApiKeyProviderId } from '@/types/agent-configuration';
 import { API_KEY_PROVIDERS, DEFAULT_ACTIVE_HOURS } from '@/types/agent-configuration';
-import { MODEL_OPTIONS_RAW as MODEL_OPTIONS, HEARTBEAT_OPTIONS } from '@/lib/openclaw-utils';
+import { HEARTBEAT_OPTIONS } from '@/lib/openclaw-utils';
+import { getAvailableModels } from '@/lib/model-catalog';
 import { maskApiKey } from '@/lib/api-key-utils';
 import IntegrationRow from './IntegrationRow';
 import GmailIntegrationModal from './GmailIntegrationModal';
@@ -37,20 +38,6 @@ import LinkedInIntegrationModal from './LinkedInIntegrationModal';
 import DisconnectIntegrationDialog from './DisconnectIntegrationDialog';
 import ApiKeyModal from './ApiKeyModal';
 import ActiveHoursModal from './ActiveHoursModal';
-
-// Type for API key provider IDs - matches the keys in AgentConfiguration.apiKeys
-type ApiKeyProviderId =
-  | 'anthropic'
-  | 'googleAi'
-  | 'mistral'
-  | 'veniceAi'
-  | 'minimax'
-  | 'openai'
-  | 'openrouter'
-  | 'groq'
-  | 'moonshotAi'
-  | 'twoAi'
-  | 'cerebras';
 import openClawService from '@/lib/openclaw-service';
 import { useToast } from '@/hooks/use-toast';
 
@@ -76,19 +63,30 @@ export default function AgentSettingsTab({
   const [name, setName] = useState(agent.name);
   const [model, setModel] = useState(agent.model);
 
-  // MODEL_OPTIONS (lib/model-catalog.ts) covers 70+ known model slugs, but a
-  // real agent's model may still not be in that list (e.g. a newer slug that
-  // hasn't been added to the catalog yet). Radix's Select/SelectValue renders
-  // blank whenever its controlled `value` doesn't match any SelectItem, so
-  // inject the agent's actual model as an extra option when it's unrecognized
-  // -- this guarantees the dropdown always displays the real value instead of
-  // going blank. See issue #123.
+  // Parse agent configuration
+  const agentConfig = useMemo<AgentConfiguration>(() => {
+    return (agent.configuration as AgentConfiguration) || {};
+  }, [agent.configuration]);
+
+  // Model dropdown is dynamically filtered to only the providers the agent
+  // has a configured API key for (see issue #106). getAvailableModels()
+  // falls back to a small default set when no API keys are configured at
+  // all, so the dropdown is never empty.
+  //
+  // A real agent's model may still not be in the filtered (or even the full)
+  // catalog -- e.g. a newer slug that hasn't been added yet, or a model from
+  // a provider whose key was since removed. Radix's Select/SelectValue
+  // renders blank whenever its controlled `value` doesn't match any
+  // SelectItem, so inject the agent's actual model as an extra option when
+  // it's missing from the filtered list -- this guarantees the dropdown
+  // always displays the real value instead of going blank. See issue #123.
   const modelOptions = useMemo(() => {
-    if (MODEL_OPTIONS.some((opt) => opt.value === agent.model)) {
-      return MODEL_OPTIONS;
+    const available = getAvailableModels(agentConfig.apiKeys);
+    if (available.some((opt) => opt.value === agent.model)) {
+      return available;
     }
-    return [{ value: agent.model, label: agent.model }, ...MODEL_OPTIONS];
-  }, [agent.model]);
+    return [{ value: agent.model, label: agent.model, provider: 'unknown' }, ...available];
+  }, [agentConfig.apiKeys, agent.model]);
   const [persona, setPersona] = useState(agent.persona ?? '');
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(agent.heartbeatEnabled);
   const [heartbeatInterval, setHeartbeatInterval] = useState<HeartbeatInterval>(
@@ -132,11 +130,6 @@ export default function AgentSettingsTab({
       },
     });
   }, [model, persona, heartbeatEnabled, heartbeatInterval, heartbeatChecklist, onSave]);
-
-  // Parse agent configuration
-  const agentConfig = useMemo<AgentConfiguration>(() => {
-    return (agent.configuration as AgentConfiguration) || {};
-  }, [agent.configuration]);
 
   // Generate integrations list from configuration
   const integrations = useMemo<Integration[]>(() => {

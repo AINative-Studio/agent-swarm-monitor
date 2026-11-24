@@ -24,22 +24,14 @@ export function formatHeartbeatInterval(interval: string | null): string {
   return map[interval] ?? interval;
 }
 
-// formatModelShort preserves its own (pre-existing) formatting logic here --
-// it's used across the app (home list, agent detail subtitle) to render a
-// real agent's model slug and already handles slugs not in MODEL_CATALOG
-// (e.g. 'anthropic/claude-sonnet-4-5') via simple string replacement rather
-// than a catalog lookup. Kept local rather than re-exported from
-// model-catalog.ts to avoid changing this already-correct display behavior.
-export function formatModelShort(model: string): string {
-  const parts = model.split('/');
-  const name = parts[parts.length - 1];
-  return name
-    .replace('claude-', 'Claude ')
-    .replace('opus-4-5', 'Opus 4.5')
-    .replace('sonnet-4', 'Sonnet 4')
-    .replace('gpt-4o', 'GPT-4o')
-    .replace('gemini-2.0-flash', 'Gemini 2.0 Flash');
-}
+// formatModelShort is centralized in lib/model-catalog.ts (see issue #106)
+// and re-exported here for backward compatibility with existing imports
+// (home list, agent detail subtitle). The catalog version is a strict
+// superset of the formatting that used to live here -- it handles slugs not
+// in MODEL_CATALOG (e.g. 'anthropic/claude-sonnet-4-5') via the same simple
+// string replacement, plus additional known slugs -- so re-exporting it
+// introduces no change in behavior for existing callers.
+export const formatModelShort = formatModelShortFromCatalog;
 
 // MODEL_OPTIONS / MODEL_OPTIONS_RAW now re-export the full catalog from
 // lib/model-catalog.ts (70+ models across 11 providers) instead of the old

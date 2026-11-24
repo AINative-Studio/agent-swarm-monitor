@@ -170,4 +170,35 @@ describe('AgentSettingsTab', () => {
 
         expect(screen.getByLabelText(/^Model$/i)).toHaveTextContent(/Claude Opus 4\.5/i);
     });
+
+    it('limits the Model dropdown to providers with a configured API key (issue #106)', async () => {
+        // Only an OpenAI key is configured, so the dropdown should offer
+        // OpenAI models but not an unconfigured provider's models (e.g. Groq).
+        const user = userEvent.setup();
+        renderTab({
+            model: 'openai/gpt-4o',
+            configuration: {
+                apiKeys: {
+                    openai: { key: 'sk-test', masked: 'sk-***test', addedAt: '2026-01-01T00:00:00Z' },
+                },
+            },
+        });
+
+        await user.click(screen.getByLabelText(/^Model$/i));
+
+        expect(screen.getByRole('option', { name: /GPT-4o$/i })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: /Llama 3\.1 70B/i })).not.toBeInTheDocument();
+    });
+
+    it('falls back to the default model set when no API keys are configured', async () => {
+        const user = userEvent.setup();
+        renderTab({ model: 'anthropic/claude-opus-4-5', configuration: {} });
+
+        await user.click(screen.getByLabelText(/^Model$/i));
+
+        // Default set includes Claude Opus 4.5 and GPT-4o, but not every
+        // model in the full 70+-model catalog (e.g. Groq's Llama options).
+        expect(screen.getByRole('option', { name: /Claude Opus 4\.5/i })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: /Llama 3\.1 70B/i })).not.toBeInTheDocument();
+    });
 });
