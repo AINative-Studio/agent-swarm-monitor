@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MessageSquare, Plus, Search, Trash2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -54,6 +54,40 @@ export default function ConversationListSidebar({
   // fetch/display down to one agent client-side.
   const effectiveAgentId = agentId ?? (agentFilter !== 'all' ? agentFilter : undefined);
   const { data, isLoading, isError, error, refetch } = useConversations(effectiveAgentId);
+
+  // Issue #138's real root cause (confirmed by instrumenting live renders
+  // against a genuinely failing backend, not just by reading the TanStack
+  // source): `isError` itself is NOT monotonic across a sustained-failure
+  // refetchInterval loop. When the next scheduled background fetch starts,
+  // TanStack resets the query to `status: 'pending'` and `isError` flips
+  // back to `false` (with `isLoading`/`isFetching` true again) BEFORE the
+  // new attempt has failed -- it isn't merely that `isLoading` re-asserts
+  // itself over a stable `isError`; `isError` is transiently cleared too.
+  // So checking `isError` before `isLoading` (the "obvious" fix) still
+  // loses the race: every poll tick briefly looks exactly like a fresh
+  // first load again, and the skeleton flashes back in.
+  //
+  // The fix latches the most recent error across that reset instead of
+  // trusting the instantaneous `isError` flag: `lastError` is set whenever
+  // the query errors, and is only cleared once the query has data again
+  // (a successful fetch). The render below treats "we have a latched
+  // error and still have no data" as the stable error state, independent
+  // of whatever `isLoading`/`isError` happen to read on this particular
+  // render.
+  const [lastError, setLastError] = useState<Error | null>(null);
+  useEffect(() => {
+    if (isError && error) {
+      setLastError(error);
+    } else if (data !== undefined) {
+      // A successful fetch (even a background one after a prior failure)
+      // clears the latched error -- the stale-data + inline-banner path
+      // below takes over instead.
+      setLastError(null);
+    }
+  }, [isError, error, data]);
+
+  const hasLatchedErrorWithNoData = lastError !== null && data === undefined;
+  const isInitialLoad = isLoading && !hasLatchedErrorWithNoData && data === undefined;
   const { data: agentListData } = useAgentList();
   const deleteConversation = useDeleteConversation();
 
@@ -152,7 +186,7 @@ export default function ConversationListSidebar({
   // Loading state — a real skeleton placeholder list (shimmering rows that
   // approximate the eventual agent-group header + conversation rows),
   // rather than a bare spinner.
-  if (isLoading) {
+  if (isInitialLoad) {
     return (
       <div
         className={cn('flex flex-col h-full bg-white border-r border-gray-200', className)}
@@ -186,8 +220,20 @@ export default function ConversationListSidebar({
     );
   }
 
-  // Error state
-  if (isError) {
+  // Error state -- shown whenever the query has a *latched* error (see
+  // lastError above) and we have no cached data to fall back on, regardless
+  // of what isLoading/isError happen to read on this particular render.
+  // Using the latched error rather than the live isError flag is what
+  // actually keeps this card stable: isError itself gets reset to false by
+  // TanStack the moment the next refetchInterval-driven fetch starts (not
+  // just overridden by isLoading), so a naive `isError && !data` check
+  // still flickers back to the skeleton branch every ~10s during a
+  // sustained failure (issue #138). When we DO have stale data from an
+  // earlier successful fetch, we fall through to the normal list render
+  // below and show a small inline error banner there instead, so a
+  // transient background failure doesn't blank out a list the user can
+  // still see and use.
+  if (hasLatchedErrorWithNoData) {
     return (
       <div className={cn('flex flex-col h-full bg-white border-r border-gray-200', className)}>
         <div className="flex items-center justify-center h-full">
@@ -197,7 +243,7 @@ export default function ConversationListSidebar({
               Error Loading Conversations
             </h3>
             <p className="text-xs text-gray-500 mb-3">
-              {getErrorMessage(error, 'Unable to load conversations. Please try again later.')}
+              {getErrorMessage(lastError, 'Unable to load conversations. Please try again later.')}
             </p>
             <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
               Retry
@@ -215,6 +261,33 @@ export default function ConversationListSidebar({
 
   return (
     <div className={cn('flex flex-col h-full bg-white border-r border-gray-200', className)}>
+      {/* Inline error banner -- shown when a background refetch (e.g. the
+          10s refetchInterval poll) has failed but we still have stale data
+          from an earlier successful load to display underneath it. Uses the
+          latched error (see lastError above) rather than the live isError
+          flag for the same reason the full-page error card does: isError
+          itself gets transiently reset on each new refetch attempt. */}
+      {lastError && data && (
+        <div
+          className="flex items-center justify-between gap-2 px-4 py-2 bg-red-50 border-b border-red-100"
+          role="alert"
+          data-testid="conversation-list-inline-error"
+        >
+          <p className="text-xs text-red-700 truncate">
+            {getErrorMessage(lastError, 'Unable to refresh conversations.')}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-xs shrink-0"
+            onClick={() => refetch()}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
       {/* Header with New Conversation button */}
       <div className="p-4 border-b border-gray-200 space-y-3">
         <Button

@@ -494,6 +494,135 @@ describe('ConversationListSidebar', () => {
       renderSidebar();
       expect(screen.getByText(/error loading conversations/i)).toBeInTheDocument();
     });
+
+    // Regression test for issue #138: refetchInterval kept re-asserting
+    // isPending/isLoading on every poll tick during a sustained 503, which
+    // buried the (correctly implemented) error+Retry card behind the
+    // loading skeleton every ~10 seconds. The query is isError AND a new
+    // background refetch has already started (isLoading/isFetching true
+    // again) -- the error card must still win and stay visible/stable.
+    it('keeps showing the error+Retry card even when a background refetch has re-triggered isLoading (no cached data)', () => {
+      // TanStack's real discriminated union doesn't allow isError and
+      // isLoading to both be true at the type level, but this exact runtime
+      // shape IS what issue #138 is about: a query that errored, where a
+      // new refetchInterval-driven fetch has already re-started by the time
+      // the component re-renders (isFetching/isPending/isLoading flip back
+      // to true while isError/error from the prior failed attempt are still
+      // present). Model it as a loosely-typed mock to exercise exactly that.
+      mockUseConversations.mockReturnValue({
+        data: undefined,
+        error: new Error('Service Unavailable'),
+        isError: true,
+        isLoading: true,
+        isPending: true,
+        isFetching: true,
+        isInitialLoading: true,
+        isSuccess: false,
+        refetch: vi.fn(),
+        status: 'pending',
+        fetchStatus: 'fetching',
+      } as unknown as ReturnType<typeof useConversations>);
+      renderSidebar();
+
+      expect(screen.getByText(/error loading conversations/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('conversation-list-skeleton')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    });
+
+    // When the query previously succeeded and now a background refetch
+    // fails, we should keep showing the (stale) data with a small inline
+    // error banner rather than blanking the whole list.
+    it('shows stale data with an inline error banner when a background refetch fails after an earlier success', () => {
+      mockUseConversations.mockReturnValue(
+        buildQueryResult<ConversationListResponse>({
+          data: { conversations: mockConversations, total: 3, limit: 50, offset: 0 },
+          error: new Error('Service Unavailable'),
+          isError: true,
+          isLoading: false,
+          isPending: false,
+          isFetching: true,
+          status: 'error',
+          fetchStatus: 'fetching',
+        })
+      );
+      renderSidebar();
+
+      // Still shows the previously-loaded conversations.
+      expect(screen.getByText('First Conversation')).toBeInTheDocument();
+      // And a stable inline error indicator, not the full-page error card
+      // and not the skeleton.
+      expect(screen.getByTestId('conversation-list-inline-error')).toBeInTheDocument();
+      expect(screen.queryByTestId('conversation-list-skeleton')).not.toBeInTheDocument();
+      expect(screen.queryByText(/error loading conversations/i)).not.toBeInTheDocument();
+    });
+
+    // This is the actual root cause confirmed by instrumenting the component
+    // live against a genuinely failing backend: TanStack doesn't just let
+    // isLoading re-assert itself over a stable isError -- isError ITSELF
+    // gets reset to false when the next refetchInterval-driven attempt
+    // starts (status flips back to 'pending'), before that new attempt has
+    // failed. A fix that only reorders `isError` before `isLoading` in the
+    // render branches still loses this race, because on the render where
+    // isError is momentarily false again, there is no error information left
+    // to check. The fix must latch the error across this reset.
+    it('stays on the error+Retry card across a render where isError has been transiently reset to false by a new refetch attempt (no cached data)', async () => {
+      // IMPORTANT: build a FRESH element on every render pass. Reusing the
+      // exact same JSX element object across render()/rerender() calls lets
+      // React bail out of re-executing the component entirely (nothing
+      // about the element itself changed), which would silently turn this
+      // into a no-op test that can't catch the regression it's meant to
+      // catch.
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      const makeSidebar = () => (
+        <QueryClientProvider client={queryClient}>
+          <ConversationListSidebar
+            selectedConversationId={null}
+            onSelectConversation={mockOnSelectConversation}
+            onNewConversation={mockOnNewConversation}
+          />
+        </QueryClientProvider>
+      );
+
+      // First: the query settles into a real error after exhausting retries.
+      mockConversationsError(new Error('Service Unavailable'));
+      const { rerender } = render(makeSidebar());
+      expect(screen.getByText(/error loading conversations/i)).toBeInTheDocument();
+
+      // Then: refetchInterval fires the next attempt. TanStack resets the
+      // query to isError:false / isLoading:true / isPending:true with no
+      // data yet, exactly mirroring the real sequence observed live.
+      mockUseConversations.mockReturnValue({
+        data: undefined,
+        error: null,
+        isError: false,
+        isLoading: true,
+        isPending: true,
+        isFetching: true,
+        isInitialLoading: true,
+        isSuccess: false,
+        refetch: vi.fn(),
+        status: 'pending',
+        fetchStatus: 'fetching',
+      } as unknown as ReturnType<typeof useConversations>);
+      rerender(makeSidebar());
+
+      // The error card must still be showing -- not the skeleton -- because
+      // we never got any data since the last known failure.
+      await waitFor(() => {
+        expect(screen.getByText(/error loading conversations/i)).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('conversation-list-skeleton')).not.toBeInTheDocument();
+    });
+
+    it('does not show the skeleton once the query has errored even without cached data, regardless of isLoading', () => {
+      mockConversationsError(new Error('Service Unavailable'));
+      renderSidebar();
+
+      expect(screen.queryByTestId('conversation-list-skeleton')).not.toBeInTheDocument();
+      expect(screen.getByText(/error loading conversations/i)).toBeInTheDocument();
+    });
   });
 
   describe('Single-agent scope', () => {
