@@ -24,8 +24,14 @@ interface ChannelCapability {
   actions: string[];
 }
 
+interface ConfiguredChannelAccountInfo {
+  accounts: string[];
+  installed: boolean;
+  origin: string;
+}
+
 interface ConfiguredChannelsResponse {
-  chat: Record<string, string[]>;
+  chat: Record<string, ConfiguredChannelAccountInfo>;
   auth: any[];
   usage: any;
 }
@@ -79,7 +85,7 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
       // Process each available channel
       channelCapabilities.forEach((cap) => {
         const channelId = cap.channel;
-        const isConfigured = configuredData.chat[channelId]?.includes(cap.accountId || 'default') || false;
+        const isConfigured = configuredData.chat[channelId]?.accounts?.includes(cap.accountId || 'default') || false;
 
         // Map channel names to user-friendly display
         const displayNames: Record<string, string> = {
