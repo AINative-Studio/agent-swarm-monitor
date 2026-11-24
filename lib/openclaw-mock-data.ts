@@ -293,7 +293,7 @@ export const MOCK_TEAM_MEMBERS: TeamMember[] = [
     id: 'member-001',
     name: 'Toby Morning',
     email: 'toby@ainative.studio',
-    role: 'owner',
+    role: 'OWNER',
     avatarInitials: 'TM',
   },
 ];

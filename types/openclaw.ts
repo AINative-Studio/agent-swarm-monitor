@@ -164,11 +164,15 @@ export interface Channel {
   };
 }
 
+// Matches the real backend's TeamMemberRole enum exactly (backend/models/team_member.py):
+// OWNER/ADMIN/MEMBER/VIEWER, uppercase, with no separate "editor" role -- see issue #131.
+export type TeamMemberRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+
 export interface TeamMember {
   id: string;
   name: string;
   email: string;
-  role: 'owner' | 'editor' | 'viewer';
+  role: TeamMemberRole;
   avatarInitials: string;
 }
 
@@ -188,11 +192,11 @@ export interface TeamMemberListResponse {
 export interface InviteTeamMemberRequest {
   email: string;
   name: string;
-  role: string;
+  role: TeamMemberRole;
 }
 
 export interface UpdateMemberRoleRequest {
-  role: string;
+  role: TeamMemberRole;
 }
 
 export type SwarmStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'failed';

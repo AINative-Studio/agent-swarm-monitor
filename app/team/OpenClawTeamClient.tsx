@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select';
 import teamService from '@/lib/team-service';
 import ListErrorState, { getErrorMessage } from '@/components/openclaw/ListErrorState';
-import type { TeamMember } from '@/types/openclaw';
+import type { TeamMember, TeamMemberRole } from '@/types/openclaw';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 12 },
@@ -26,8 +26,12 @@ const fadeUp = {
   }),
 };
 
+// Keyed by the real backend's TeamMemberRole enum (OWNER/ADMIN/MEMBER/VIEWER,
+// uppercase) -- see issue #131, where the previous lowercase owner/editor/viewer
+// values here (and in the invite payload) didn't match any role the backend's
+// POST /team/members/invite endpoint accepts, so every invite 422'd.
 const roleConfig: Record<
-  string,
+  TeamMemberRole,
   {
     icon: React.ComponentType<{ className?: string }>;
     label: string;
@@ -35,19 +39,25 @@ const roleConfig: Record<
     badgeClass: string;
   }
 > = {
-  owner: {
+  OWNER: {
     icon: Crown,
     label: 'Owner',
     description: 'Full access \u2014 can manage members, billing, and all agents',
     badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
   },
-  editor: {
+  ADMIN: {
     icon: Pencil,
-    label: 'Editor',
+    label: 'Admin',
+    description: 'Can manage agents and team members',
+    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
+  },
+  MEMBER: {
+    icon: Pencil,
+    label: 'Member',
     description: 'Can create, edit, and deploy agents',
     badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
   },
-  viewer: {
+  VIEWER: {
     icon: Eye,
     label: 'Viewer',
     description: 'Read-only access to agents and dashboard',
@@ -60,7 +70,15 @@ interface MemberRowProps {
 }
 
 function MemberRow({ member }: MemberRowProps) {
-  const config = roleConfig[member.role];
+  // Defensive fallback: member.role comes straight from the real backend, so
+  // guard against a role value this frontend doesn't (yet) know how to label
+  // rather than crashing the whole list on an unrecognized value.
+  const config = roleConfig[member.role] ?? {
+    icon: Circle,
+    label: member.role,
+    description: '',
+    badgeClass: 'bg-gray-50 text-gray-600 border-gray-200',
+  };
   const RoleIcon = config.icon;
 
   return (
@@ -95,7 +113,7 @@ function getInitials(name: string): string {
 
 export default function OpenClawTeamClient() {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState('viewer');
+  const [role, setRole] = useState<TeamMemberRole>('VIEWER');
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -110,13 +128,13 @@ export default function OpenClawTeamClient() {
   }));
 
   const inviteMutation = useMutation({
-    mutationFn: (vars: { email: string; name: string; role: string }) =>
+    mutationFn: (vars: { email: string; name: string; role: TeamMemberRole }) =>
       teamService.inviteMember(vars),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['team-members'] });
       // Only clear the form on confirmed success -- see issue #108.
       setEmail('');
-      setRole('viewer');
+      setRole('VIEWER');
     },
   });
 
@@ -172,16 +190,23 @@ export default function OpenClawTeamClient() {
               if (e.key === 'Enter') handleAddMember();
             }}
           />
-          <Select value={role} onValueChange={setRole} disabled={inviteMutation.isPending}>
-            <SelectTrigger className="w-[120px] bg-white border-gray-200 text-gray-900 text-sm">
+          <Select
+            value={role}
+            onValueChange={(value) => setRole(value as TeamMemberRole)}
+            disabled={inviteMutation.isPending}
+          >
+            <SelectTrigger className="w-[130px] bg-white border-gray-200 text-gray-900 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-white border-gray-200">
-              <SelectItem value="viewer" className="text-gray-900 text-sm">
+              <SelectItem value="VIEWER" className="text-gray-900 text-sm">
                 Viewer
               </SelectItem>
-              <SelectItem value="editor" className="text-gray-900 text-sm">
-                Editor
+              <SelectItem value="MEMBER" className="text-gray-900 text-sm">
+                Member
+              </SelectItem>
+              <SelectItem value="ADMIN" className="text-gray-900 text-sm">
+                Admin
               </SelectItem>
             </SelectContent>
           </Select>
@@ -251,7 +276,7 @@ export default function OpenClawTeamClient() {
           </div>
         </div>
         <div className="px-5 divide-y divide-gray-100">
-          {(['owner', 'editor', 'viewer'] as const).map((roleKey) => {
+          {(['OWNER', 'ADMIN', 'MEMBER', 'VIEWER'] as const).map((roleKey) => {
             const config = roleConfig[roleKey];
             const RoleIcon = config.icon;
             return (
