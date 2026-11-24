@@ -238,6 +238,7 @@ export const MOCK_INTEGRATIONS: Integration[] = [
     icon: 'gmail',
     description: 'Receive emails and forward them to your agent for processing.',
     connected: false,
+    comingSoon: true,
   },
   {
     id: 'linkedin',

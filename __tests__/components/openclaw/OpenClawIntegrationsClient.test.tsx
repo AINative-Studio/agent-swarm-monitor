@@ -52,4 +52,14 @@ describe('OpenClawIntegrationsClient', () => {
 
     expect(screen.getByText('LinkedIn - Coming Soon')).toBeInTheDocument();
   });
+
+  // Issue #133: Gmail and LinkedIn are equally non-functional (both open the
+  // same "Coming Soon" modal above), so both rows must carry the same
+  // "Coming soon" badge -- otherwise Gmail looks actionable when it isn't.
+  it('shows a "Coming soon" badge on both the Gmail and LinkedIn rows', () => {
+    render(<OpenClawIntegrationsClient />);
+
+    const badges = screen.getAllByText('Coming soon');
+    expect(badges).toHaveLength(2);
+  });
 });
