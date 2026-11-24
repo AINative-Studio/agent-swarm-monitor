@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AuditLogClient from '@/app/audit-log/AuditLogClient';
-import type { AuditEvent, AuditEventListResponse } from '@/types/openclaw';
+import type { RealAuditEvent, RealAuditLogResponse } from '@/types/openclaw';
 
 // A minimal stateful fake of the Next.js router/searchParams pair: router.replace
 // pushes a new query string into an external store, and useSearchParams subscribes
@@ -54,30 +54,32 @@ function renderWithQueryClient(ui: React.ReactElement) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 }
 
-const mockEvents: AuditEvent[] = [
+// Shaped like the real GET /api/v1/security/audit-logs response (issue #140):
+// no id/severity/agentName -- a generic peerId/action/resource/result/reason record.
+const mockEvents: RealAuditEvent[] = [
   {
-    id: 'audit-1',
     timestamp: new Date(Date.now() - 3600000).toISOString(),
     eventType: 'agent_paused',
-    agentId: 'agent-001',
-    agentName: 'Linear Ticket Solver',
-    actor: 'toby@ainative.studio',
-    description: 'Agent paused manually.',
-    severity: 'warning',
+    peerId: 'agent-001',
+    action: 'pause',
+    resource: 'agent-001',
+    result: 'success',
+    reason: 'Agent paused manually.',
+    metadata: {},
   },
   {
-    id: 'audit-2',
     timestamp: new Date(Date.now() - 7200000).toISOString(),
     eventType: 'heartbeat_failed',
-    agentId: 'agent-002',
-    agentName: 'Team Slack Engineer',
-    actor: 'system',
-    description: 'Heartbeat failed due to timeout.',
-    severity: 'critical',
+    peerId: 'agent-002',
+    action: 'heartbeat',
+    resource: 'agent-002',
+    result: 'denied',
+    reason: 'Heartbeat failed due to timeout.',
+    metadata: {},
   },
 ];
 
-function buildEventsResponse(events: AuditEvent[]): AuditEventListResponse {
+function buildEventsResponse(events: RealAuditEvent[]): RealAuditLogResponse {
   return { events, total: events.length, limit: 50, offset: 0 };
 }
 
@@ -127,17 +129,32 @@ describe('AuditLogClient', () => {
     expect(screen.getByText(/failed to load audit events/i)).toBeInTheDocument();
   });
 
-  it('re-queries with the selected event type filter', async () => {
+  it('falls back to a neutral badge style for an unrecognized result value, instead of crashing', () => {
+    mockUseAuditEvents.mockReturnValue({
+      data: buildEventsResponse([
+        {
+          timestamp: new Date().toISOString(),
+          eventType: 'settings_changed',
+          peerId: 'agent-003',
+          action: 'update',
+          resource: 'agent-003',
+          result: 'partial',
+          reason: 'Some unrecognized result value.',
+          metadata: {},
+        },
+      ]),
+      isLoading: false,
+      isError: false,
+    } as any);
+    renderWithQueryClient(<AuditLogClient />);
+    expect(screen.getByText('partial')).toBeInTheDocument();
+  });
+
+  it('re-queries with the event type filter typed into the Event type field', async () => {
     renderWithQueryClient(<AuditLogClient />);
 
-    const trigger = screen.getByLabelText(/filter by event type/i);
-    // Radix UI Select opens on Enter and selects the focused option on Enter;
-    // keyboard interaction avoids jsdom's lack of real pointer-drag semantics.
-    trigger.focus();
-    fireEvent.keyDown(trigger, { key: 'Enter' });
-    const listbox = await screen.findByRole('listbox');
-    const option = await within(listbox).findByText('Heartbeat Failed');
-    fireEvent.keyDown(option.closest('[role="option"]') as HTMLElement, { key: 'Enter' });
+    const input = screen.getByLabelText(/filter by event type/i);
+    fireEvent.change(input, { target: { value: 'heartbeat_failed' } });
 
     await waitFor(() => {
       const lastCallArgs = mockUseAuditEvents.mock.calls.at(-1)?.[0];
@@ -145,20 +162,16 @@ describe('AuditLogClient', () => {
     });
   });
 
-  it('populates the Agent filter from the audit events mock data, not a live agent list', async () => {
+  it('re-queries with the peer ID filter typed into the Peer ID field', async () => {
     renderWithQueryClient(<AuditLogClient />);
 
-    const trigger = screen.getByLabelText(/filter by agent/i);
-    trigger.focus();
-    fireEvent.keyDown(trigger, { key: 'Enter' });
-    const listbox = await screen.findByRole('listbox');
+    const input = screen.getByLabelText(/filter by peer id/i);
+    fireEvent.change(input, { target: { value: 'agent-002' } });
 
-    // These are the agent names baked into MOCK_AUDIT_EVENTS (lib/audit-log-mock-data.ts),
-    // i.e. the same source that populates the Events table — not an unrelated agents API.
-    expect(within(listbox).getByText('Linear Ticket Solver')).toBeInTheDocument();
-    expect(within(listbox).getByText('Team Slack Engineer')).toBeInTheDocument();
-    expect(within(listbox).getByText('Atlas')).toBeInTheDocument();
-    expect(within(listbox).getByText('Debo')).toBeInTheDocument();
+    await waitFor(() => {
+      const lastCallArgs = mockUseAuditEvents.mock.calls.at(-1)?.[0];
+      expect(lastCallArgs).toMatchObject({ peerId: 'agent-002' });
+    });
   });
 
   it('shows a clear filters action once a filter is applied and resets on click', async () => {

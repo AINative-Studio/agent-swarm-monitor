@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import auditLogService from '@/lib/audit-log-service';
-import type { AuditEventFilters, UpdateSettingsRequest } from '@/types/openclaw';
+import type { RealAuditLogFilters, UpdateSettingsRequest } from '@/types/openclaw';
 
-export function useAuditEvents(filters: AuditEventFilters = {}) {
+export function useAuditEvents(filters: RealAuditLogFilters = {}) {
   return useQuery({
     queryKey: ['audit-events', filters],
     queryFn: () => auditLogService.listAuditEvents(filters),

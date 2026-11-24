@@ -312,6 +312,45 @@ export const AUDIT_EVENT_TYPES: { value: AuditEventType; label: string }[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Real backend audit log shape (issue #140)
+//
+// GET /api/v1/security/audit-logs returns events shaped nothing like the
+// AuditEvent mock type above (no id, no severity, no agentId/agentName --
+// just a generic peerId/action/resource/result/reason/metadata record of
+// security-relevant actions the backend itself tracks). apiClient's
+// snakeToCamelKeys converts event_type/peer_id on the way in, so these
+// fields are already camelCase by the time the frontend sees them.
+// ---------------------------------------------------------------------------
+
+export interface RealAuditEvent {
+  timestamp: string;
+  eventType: string;
+  peerId: string;
+  action: string;
+  resource: string | null;
+  result: string;
+  reason: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface RealAuditLogResponse {
+  events: RealAuditEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RealAuditLogFilters {
+  peerId?: string;
+  eventType?: string;
+  result?: string;
+  startTime?: string;
+  endTime?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
 

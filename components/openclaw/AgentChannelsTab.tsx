@@ -1,237 +1,62 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
+import { useState } from 'react';
+import { useAgentChannels, type AgentChannelId } from '@/hooks/useAgentChannels';
 import ChannelRow from './ChannelRow';
-import { ChannelAuthDialog } from './ChannelAuthDialog';
-import openClawService from '@/lib/openclaw-service';
-import { useToast } from '@/hooks/use-toast';
-import { ApiTimeoutError } from '@/lib/api-client';
+import WhatsAppConnectionModal from './WhatsAppConnectionModal';
+import TokenConnectionModal from './TokenConnectionModal';
+import ComingSoonModal from './ComingSoonModal';
+import DisconnectChannelDialog from './DisconnectChannelDialog';
+import { Button } from '@/components/ui/button';
+import type { Channel } from '@/types/openclaw';
 
-interface ChannelCapability {
-  channel: string;
-  accountId: string;
-  configured: boolean;
-  enabled: boolean;
-  support: {
-    chatTypes?: string[];
-    polls?: boolean;
-    reactions?: boolean;
-    media?: boolean;
-    threads?: boolean;
-    nativeCommands?: boolean;
-  };
-  actions: string[];
-}
+type ModalState = { type: AgentChannelId; channelName: string } | null;
 
-interface ConfiguredChannelAccountInfo {
-  accounts: string[];
-  installed: boolean;
-  origin: string;
-}
-
-interface ConfiguredChannelsResponse {
-  chat: Record<string, ConfiguredChannelAccountInfo>;
-  auth: any[];
-  usage: any;
-}
-
-interface Channel {
-  id: string;
-  name: string;
-  icon: string;
-  description: string;
-  connected: boolean;
-  accountId?: string;
-}
-
+/**
+ * Agent detail page's Channels tab.
+ *
+ * Shares the exact same per-agent `configuration.channels` data source (via
+ * useAgentChannels) as the standalone /channels page, so a channel connected on
+ * either surface shows as connected on both -- see issue #139. This previously
+ * called a separate "global" OpenClaw channel API with its own channel catalog,
+ * which was never in sync with /channels and, in practice, hung indefinitely on
+ * every load in this environment.
+ */
 export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
-  const { toast } = useToast();
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [authDialog, setAuthDialog] = useState<{
-    open: boolean;
-    channelId: string;
-    channelName: string;
-    authType: string;
-    instructions: string[];
-  }>({
-    open: false,
-    channelId: '',
-    channelName: '',
-    authType: '',
-    instructions: [],
-  });
+  const { channels, isError, refetch, connectWhatsApp, connectWithToken, disconnect } =
+    useAgentChannels(agentId);
 
-  useEffect(() => {
-    loadChannels();
-  }, [agentId]);
+  const [connectionModal, setConnectionModal] = useState<ModalState>(null);
+  const [disconnectDialog, setDisconnectDialog] = useState<ModalState>(null);
 
-  const loadChannels = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Get available channels (capabilities)
-      const availableData = await openClawService.getAvailableChannels();
-      const configuredData: ConfiguredChannelsResponse = await openClawService.getConfiguredChannels();
-
-      // Map available channels to UI format
-      const channelCapabilities: ChannelCapability[] = availableData.channels || [];
-
-      const channelsMap: Record<string, Channel> = {};
-
-      // Process each available channel
-      channelCapabilities.forEach((cap) => {
-        const channelId = cap.channel;
-        const isConfigured = configuredData.chat[channelId]?.accounts?.includes(cap.accountId || 'default') || false;
-
-        // Map channel names to user-friendly display
-        const displayNames: Record<string, string> = {
-          whatsapp: 'WhatsApp',
-          slack: 'Slack',
-          telegram: 'Telegram',
-          discord: 'Discord',
-          signal: 'Signal',
-          imessage: 'iMessage',
-          msteams: 'Microsoft Teams',
-          googlechat: 'Google Chat',
-          matrix: 'Matrix',
-          mattermost: 'Mattermost',
-        };
-
-        // Generate descriptions based on capabilities
-        const features: string[] = [];
-        if (cap.support.chatTypes?.length) {
-          features.push(cap.support.chatTypes.join(', '));
-        }
-        if (cap.support.media) features.push('media');
-        if (cap.support.reactions) features.push('reactions');
-        if (cap.support.threads) features.push('threads');
-
-        const description = features.length
-          ? `Supports ${features.slice(0, 3).join(', ')}`
-          : 'Messaging platform';
-
-        channelsMap[channelId] = {
-          id: channelId,
-          name: displayNames[channelId] || channelId.charAt(0).toUpperCase() + channelId.slice(1),
-          icon: channelId,
-          description,
-          connected: isConfigured,
-          accountId: cap.accountId,
-        };
-      });
-
-      // Add popular channels that might not be in capabilities yet
-      const popularChannels = ['telegram', 'discord', 'signal', 'msteams'];
-      popularChannels.forEach((channelId) => {
-        if (!channelsMap[channelId]) {
-          const displayNames: Record<string, string> = {
-            telegram: 'Telegram',
-            discord: 'Discord',
-            signal: 'Signal',
-            msteams: 'Microsoft Teams',
-          };
-
-          channelsMap[channelId] = {
-            id: channelId,
-            name: displayNames[channelId] || channelId,
-            icon: channelId,
-            description: 'Messaging platform',
-            connected: false,
-          };
-        }
-      });
-
-      setChannels(Object.values(channelsMap));
-    } catch (err: any) {
-      console.error('Failed to load channels:', err);
-
-      // Handle timeout errors specifically
-      if (err instanceof ApiTimeoutError) {
-        const message = 'Request timed out. The OpenClaw backend might not be running. Please check if the backend is started on port 8001.';
-        setError(message);
-        toast({
-          title: 'Connection Timeout',
-          description: message,
-          variant: 'destructive'
-        });
-      } else {
-        setError(err.message || 'Failed to load channels');
-        toast({
-          title: 'Failed to load channels',
-          description: err.message,
-          variant: 'destructive'
-        });
-      }
-    } finally {
-      setLoading(false);
+  const handleConnect = (channel: Channel) => {
+    if (channel.connected) {
+      setDisconnectDialog({ type: channel.id as AgentChannelId, channelName: channel.name });
+    } else {
+      setConnectionModal({ type: channel.id as AgentChannelId, channelName: channel.name });
     }
   };
 
-  const handleChannelConnect = async (channel: Channel) => {
-    try {
-      if (channel.connected) {
-        // Show manage/disconnect options
-        toast({
-          title: `Managing ${channel.name}`,
-          description: 'Disconnect functionality coming soon'
-        });
-        return;
-      }
-
-      // Get authentication instructions
-      const instructions = await openClawService.getChannelAuthInstructions(channel.id);
-
-      // Open authentication dialog
-      setAuthDialog({
-        open: true,
-        channelId: channel.id,
-        channelName: channel.name,
-        authType: instructions.auth_type,
-        instructions: instructions.instructions,
-      });
-    } catch (err: any) {
-      console.error(`Failed to get auth instructions for ${channel.name}:`, err);
-
-      // Handle timeout errors specifically
-      if (err instanceof ApiTimeoutError) {
-        toast({
-          title: 'Connection Timeout',
-          description: 'Request timed out. Please check if the OpenClaw backend is running on port 8001.',
-          variant: 'destructive'
-        });
-      } else {
-        toast({
-          title: `Failed to connect ${channel.name}`,
-          description: err.message,
-          variant: 'destructive'
-        });
-      }
-    }
+  const handleWhatsAppConnect = async (data: { phoneNumber: string }) => {
+    await connectWhatsApp(data);
+    setConnectionModal(null);
   };
 
-  const handleAuthSuccess = () => {
-    loadChannels(); // Reload to update status
+  const handleTokenConnect = async (
+    channelId: 'telegram' | 'discord' | 'slack',
+    data: { botToken: string; botUsername?: string }
+  ) => {
+    await connectWithToken(channelId, data);
+    setConnectionModal(null);
   };
 
-  if (loading) {
-    return (
-      <div className="max-w-3xl">
-        <div className="mb-4">
-          <h3 className="text-base font-semibold text-gray-900">Channels</h3>
-          <p className="text-sm text-gray-500 mt-0.5">Connect messaging platforms</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-8 text-center">
-          <p className="text-sm text-gray-500">Loading channels...</p>
-        </div>
-      </div>
-    );
-  }
+  const handleDisconnect = async () => {
+    if (!disconnectDialog) return;
+    await disconnect(disconnectDialog.type, disconnectDialog.channelName);
+    setDisconnectDialog(null);
+  };
 
-  if (error) {
+  if (isError) {
     return (
       <div className="max-w-3xl">
         <div className="mb-4">
@@ -239,11 +64,11 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
           <p className="text-sm text-gray-500 mt-0.5">Connect messaging platforms</p>
         </div>
         <div className="rounded-lg border border-red-200 bg-red-50 p-8 text-center">
-          <p className="text-sm text-red-600">{error}</p>
+          <p className="text-sm text-red-600">Couldn&apos;t load this agent&apos;s channels.</p>
           <Button
             variant="outline"
             size="sm"
-            onClick={loadChannels}
+            onClick={() => refetch()}
             className="mt-4"
           >
             Retry
@@ -259,51 +84,78 @@ export default function AgentChannelsTab({ agentId }: { agentId?: string }) {
         <div>
           <h3 className="text-base font-semibold text-gray-900">Channels</h3>
           <p className="text-sm text-gray-500 mt-0.5">
-            Connect messaging platforms for agent communication
+            Connect messaging platforms for this agent
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={loadChannels}
-          className="text-gray-600"
-        >
-          Refresh
-        </Button>
       </div>
 
-      {channels.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-8 text-center">
-          <p className="text-sm text-gray-500">No channels available</p>
-        </div>
-      ) : (
-        <div className="rounded-lg border border-gray-200 bg-white px-4">
-          {channels.map((channel) => (
-            <ChannelRow
-              key={channel.id}
-              channel={channel}
-              onConnect={() => handleChannelConnect(channel)}
-            />
-          ))}
-        </div>
-      )}
+      <div className="rounded-lg border border-gray-200 bg-white px-4">
+        {channels.map((channel) => (
+          <ChannelRow
+            key={channel.id}
+            channel={channel}
+            onConnect={() => handleConnect(channel)}
+          />
+        ))}
+      </div>
 
       <div className="mt-4 text-xs text-gray-500">
         <p>
-          💡 Channels are managed system-wide in OpenClaw. Connected channels can be used by all agents.
+          Channels connected here are scoped to this agent. Manage them from this
+          tab or from the main Channels page — both stay in sync.
         </p>
       </div>
 
-      {/* Authentication Dialog */}
-      <ChannelAuthDialog
-        open={authDialog.open}
-        onOpenChange={(open) => setAuthDialog({ ...authDialog, open })}
-        channelId={authDialog.channelId}
-        channelName={authDialog.channelName}
-        authType={authDialog.authType}
-        instructions={authDialog.instructions}
-        onSuccess={handleAuthSuccess}
+      {/* WhatsApp Connection Modal */}
+      <WhatsAppConnectionModal
+        open={connectionModal?.type === 'whatsapp'}
+        onOpenChange={(open) => !open && setConnectionModal(null)}
+        onConnect={handleWhatsAppConnect}
       />
+
+      {/* Telegram Connection Modal */}
+      <TokenConnectionModal
+        open={connectionModal?.type === 'telegram'}
+        onOpenChange={(open) => !open && setConnectionModal(null)}
+        onConnect={(data) => handleTokenConnect('telegram', data)}
+        channelType="telegram"
+        channelName="Telegram"
+      />
+
+      {/* Discord Connection Modal */}
+      <TokenConnectionModal
+        open={connectionModal?.type === 'discord'}
+        onOpenChange={(open) => !open && setConnectionModal(null)}
+        onConnect={(data) => handleTokenConnect('discord', data)}
+        channelType="discord"
+        channelName="Discord"
+      />
+
+      {/* Slack Connection Modal */}
+      <TokenConnectionModal
+        open={connectionModal?.type === 'slack'}
+        onOpenChange={(open) => !open && setConnectionModal(null)}
+        onConnect={(data) => handleTokenConnect('slack', data)}
+        channelType="slack"
+        channelName="Slack"
+      />
+
+      {/* Microsoft Teams Coming Soon Modal */}
+      <ComingSoonModal
+        open={connectionModal?.type === 'microsoft-teams'}
+        onOpenChange={(open) => !open && setConnectionModal(null)}
+        channelName="Microsoft Teams"
+      />
+
+      {/* Disconnect Confirmation Dialog */}
+      {disconnectDialog && (
+        <DisconnectChannelDialog
+          open={true}
+          onOpenChange={(open) => !open && setDisconnectDialog(null)}
+          onConfirm={handleDisconnect}
+          channelName={disconnectDialog.channelName}
+        />
+      )}
     </div>
   );
 }

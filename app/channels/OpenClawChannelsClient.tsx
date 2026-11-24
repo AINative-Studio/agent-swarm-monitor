@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAgentList } from '@/hooks/useOpenClawAgents';
-import { useUpdateAgentSettings } from '@/hooks/useOpenClawAgents';
-import { useToast } from '@/hooks/use-toast';
+import { useAgentChannels } from '@/hooks/useAgentChannels';
 import { fadeUp } from '@/lib/openclaw-utils';
 import AgentPicker from '@/components/openclaw/AgentPicker';
 import ChannelRow from '@/components/openclaw/ChannelRow';
@@ -13,44 +12,10 @@ import WhatsAppConnectionModal from '@/components/openclaw/WhatsAppConnectionMod
 import TokenConnectionModal from '@/components/openclaw/TokenConnectionModal';
 import ComingSoonModal from '@/components/openclaw/ComingSoonModal';
 import DisconnectChannelDialog from '@/components/openclaw/DisconnectChannelDialog';
-import type { Channel, ChannelConfiguration } from '@/types/openclaw';
+import type { Channel } from '@/types/openclaw';
+import type { AgentChannelId } from '@/hooks/useAgentChannels';
 
-// Define the static list of available channels
-const AVAILABLE_CHANNELS = [
-  {
-    id: 'whatsapp',
-    name: 'WhatsApp',
-    icon: 'whatsapp',
-    description: 'Connect to WhatsApp by scanning a QR code.',
-  },
-  {
-    id: 'telegram',
-    name: 'Telegram',
-    icon: 'telegram',
-    description: 'Connect a Telegram bot. Fastest to set up — just a bot token from @BotFather.',
-  },
-  {
-    id: 'slack',
-    name: 'Slack',
-    icon: 'slack',
-    description: 'Connect to Slack workspaces via Socket Mode or HTTP Events API.',
-  },
-  {
-    id: 'discord',
-    name: 'Discord',
-    icon: 'discord',
-    description: 'Connect a Discord bot to servers, channels, and DMs.',
-  },
-  {
-    id: 'microsoft-teams',
-    name: 'Microsoft Teams',
-    icon: 'teams',
-    description: 'Connect to Microsoft Teams via the Bot Framework (plugin-based channel).',
-  },
-] as const;
-
-type ChannelId = typeof AVAILABLE_CHANNELS[number]['id'];
-type ModalState = { type: ChannelId; channelName: string } | null;
+type ModalState = { type: AgentChannelId; channelName: string } | null;
 
 export default function OpenClawChannelsClient() {
   const { data, isError, error, refetch } = useAgentList();
@@ -63,17 +28,8 @@ export default function OpenClawChannelsClient() {
   const [connectionModal, setConnectionModal] = useState<ModalState>(null);
   const [disconnectDialog, setDisconnectDialog] = useState<ModalState>(null);
 
-  // Toast hook for notifications
-  const { toast } = useToast();
-
-  // Mutation for updating agent settings
-  const updateSettings = useUpdateAgentSettings(selectedAgentId || '');
-
-  // Get the selected agent
-  const selectedAgent = useMemo(
-    () => agents.find((a) => a.id === selectedAgentId),
-    [agents, selectedAgentId]
-  );
+  const { channels, connectWhatsApp, connectWithToken, disconnect } =
+    useAgentChannels(selectedAgentId);
 
   // Update selection when agents load
   useEffect(() => {
@@ -82,165 +38,34 @@ export default function OpenClawChannelsClient() {
     }
   }, [agents, selectedAgentId]);
 
-  // Get channel configuration from selected agent
-  const channelConfig = useMemo(() => {
-    if (!selectedAgent?.configuration) return {};
-    return (selectedAgent.configuration.channels || {}) as ChannelConfiguration;
-  }, [selectedAgent]);
-
-  // Generate channels list from static data + agent configuration
-  const channels: Channel[] = useMemo(() => {
-    return AVAILABLE_CHANNELS.map((channel) => {
-      const config = channelConfig[channel.id as keyof ChannelConfiguration];
-      const connected = config?.enabled || false;
-
-      return {
-        ...channel,
-        connected,
-        connectionDetails: connected
-          ? {
-              workspace: 'workspace' in (config || {}) ? (config as any).workspace : undefined,
-              username: 'botUsername' in (config || {}) ? (config as any).botUsername : undefined,
-              phoneNumber: 'phoneNumber' in (config || {}) ? (config as any).phoneNumber : undefined,
-              connectedAt: config?.connectedAt,
-            }
-          : undefined,
-      };
-    });
-  }, [channelConfig]);
-
   // Handle connect button click
   const handleConnect = (channel: Channel) => {
     if (channel.connected) {
       // If already connected, show disconnect dialog
-      setDisconnectDialog({ type: channel.id as ChannelId, channelName: channel.name });
+      setDisconnectDialog({ type: channel.id as AgentChannelId, channelName: channel.name });
     } else {
       // If not connected, show connection modal
-      setConnectionModal({ type: channel.id as ChannelId, channelName: channel.name });
+      setConnectionModal({ type: channel.id as AgentChannelId, channelName: channel.name });
     }
   };
 
-  // Handle WhatsApp connection
   const handleWhatsAppConnect = async (data: { phoneNumber: string }) => {
-    if (!selectedAgent) return;
-
-    try {
-      const updatedConfig = {
-        ...selectedAgent.configuration,
-        channels: {
-          ...(selectedAgent.configuration?.channels || {}),
-          whatsapp: {
-            enabled: true,
-            phoneNumber: data.phoneNumber,
-            connectedAt: new Date().toISOString(),
-          },
-        },
-      };
-
-      await updateSettings.mutateAsync({
-        configuration: updatedConfig,
-      });
-
-      toast({
-        title: 'WhatsApp Connected',
-        description: 'WhatsApp channel has been successfully connected.',
-      });
-    } catch (error) {
-      console.error('Error saving WhatsApp config:', error);
-      toast({
-        title: 'Connection Failed',
-        description: 'Failed to connect WhatsApp channel. Please try again.',
-        variant: 'destructive',
-      });
-    }
+    await connectWhatsApp(data);
+    setConnectionModal(null);
   };
 
-  // Handle token-based connection (Telegram, Discord, Slack)
   const handleTokenConnect = async (
     channelId: 'telegram' | 'discord' | 'slack',
     data: { botToken: string; botUsername?: string }
   ) => {
-    if (!selectedAgent) return;
-
-    try {
-      const channelData =
-        channelId === 'slack'
-          ? {
-              enabled: true,
-              botToken: data.botToken,
-              workspace: data.botUsername,
-              connectedAt: new Date().toISOString(),
-            }
-          : {
-              enabled: true,
-              botToken: data.botToken,
-              botUsername: data.botUsername,
-              connectedAt: new Date().toISOString(),
-            };
-
-      const updatedConfig = {
-        ...selectedAgent.configuration,
-        channels: {
-          ...(selectedAgent.configuration?.channels || {}),
-          [channelId]: channelData,
-        },
-      };
-
-      await updateSettings.mutateAsync({
-        configuration: updatedConfig,
-      });
-
-      const channelName = channelId.charAt(0).toUpperCase() + channelId.slice(1);
-      toast({
-        title: `${channelName} Connected`,
-        description: `${channelName} channel has been successfully connected.`,
-      });
-    } catch (error) {
-      console.error(`Error saving ${channelId} config:`, error);
-      const channelName = channelId.charAt(0).toUpperCase() + channelId.slice(1);
-      toast({
-        title: 'Connection Failed',
-        description: `Failed to connect ${channelName} channel. Please try again.`,
-        variant: 'destructive',
-      });
-    }
+    await connectWithToken(channelId, data);
+    setConnectionModal(null);
   };
 
-  // Handle disconnect
   const handleDisconnect = async () => {
-    if (!selectedAgent || !disconnectDialog) return;
-
-    try {
-      const channelId = disconnectDialog.type;
-      const channelName = disconnectDialog.channelName;
-      const updatedConfig = {
-        ...selectedAgent.configuration,
-        channels: {
-          ...(selectedAgent.configuration?.channels || {}),
-          [channelId]: {
-            enabled: false,
-          },
-        },
-      };
-
-      await updateSettings.mutateAsync({
-        configuration: updatedConfig,
-      });
-
-      toast({
-        title: 'Channel Disconnected',
-        description: `${channelName} has been disconnected.`,
-      });
-
-      setDisconnectDialog(null);
-    } catch (error) {
-      console.error('Error disconnecting channel:', error);
-      toast({
-        title: 'Disconnect Failed',
-        description: 'Failed to disconnect channel. Please try again.',
-        variant: 'destructive',
-      });
-    }
+    if (!disconnectDialog) return;
+    await disconnect(disconnectDialog.type, disconnectDialog.channelName);
+    setDisconnectDialog(null);
   };
 
   return (

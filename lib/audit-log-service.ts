@@ -1,59 +1,42 @@
 import type {
-  AuditEvent,
-  AuditEventFilters,
-  AuditEventListResponse,
   OpenClawSettings,
+  RealAuditLogFilters,
+  RealAuditLogResponse,
   UpdateSettingsRequest,
 } from '@/types/openclaw';
-import { MOCK_AUDIT_EVENTS, MOCK_SETTINGS } from './audit-log-mock-data';
+import { MOCK_SETTINGS } from './audit-log-mock-data';
+import apiClient from './api-client';
 
 /**
  * AuditLogService
  *
- * Mock singleton service for audit events and gateway/agent settings.
- * Mirrors the pattern used by OpenClawService in lib/openclaw-service.ts.
+ * Audit events (listAuditEvents) call the real backend --
+ * GET /api/v1/security/audit-logs -- confirmed live and already recording
+ * real backend-side security events (see issue #140). The event shape there
+ * is intentionally generic (peerId/action/resource/result/reason/metadata,
+ * no id/severity/agentName), nothing like the old AuditEvent mock type, so
+ * callers use RealAuditEvent/RealAuditLogResponse instead.
  *
- * All methods currently filter/return in-memory mock data.
+ * Gateway/agent-defaults settings (getSettings/updateSettings) are a
+ * separate feature (the /settings page, not /audit-log) with no real
+ * backend endpoint identified for this issue, so those remain mock --
+ * mirrors the pattern used by OpenClawService in lib/openclaw-service.ts
+ * for the still-mock parts of that service.
  */
 class AuditLogService {
-  private events: AuditEvent[] = [...MOCK_AUDIT_EVENTS];
   private settings: OpenClawSettings = { ...MOCK_SETTINGS };
 
-  async listAuditEvents(filters: AuditEventFilters = {}): Promise<AuditEventListResponse> {
-    // TODO: Replace with real API call — GET /api/v1/audit/events
-    let filtered = [...this.events];
+  async listAuditEvents(filters: RealAuditLogFilters = {}): Promise<RealAuditLogResponse> {
+    const params: Record<string, string> = {};
+    if (filters.peerId) params.peer_id = filters.peerId;
+    if (filters.eventType) params.event_type = filters.eventType;
+    if (filters.result) params.result = filters.result;
+    if (filters.startTime) params.start_time = filters.startTime;
+    if (filters.endTime) params.end_time = filters.endTime;
+    params.limit = String(filters.limit ?? 50);
+    params.offset = String(filters.offset ?? 0);
 
-    if (filters.eventType && filters.eventType !== 'all') {
-      filtered = filtered.filter((e) => e.eventType === filters.eventType);
-    }
-
-    if (filters.agentId && filters.agentId !== 'all') {
-      filtered = filtered.filter((e) => e.agentId === filters.agentId);
-    }
-
-    if (filters.startDate) {
-      const start = new Date(filters.startDate).getTime();
-      filtered = filtered.filter((e) => new Date(e.timestamp).getTime() >= start);
-    }
-
-    if (filters.endDate) {
-      // Include the entire end date day.
-      const end = new Date(filters.endDate).getTime() + 86400000;
-      filtered = filtered.filter((e) => new Date(e.timestamp).getTime() < end);
-    }
-
-    filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    const limit = filters.limit ?? 50;
-    const offset = filters.offset ?? 0;
-    const page = filtered.slice(offset, offset + limit);
-
-    return {
-      events: page,
-      total: filtered.length,
-      limit,
-      offset,
-    };
+    return apiClient.get<RealAuditLogResponse>('/security/audit-logs', params);
   }
 
   async getSettings(): Promise<OpenClawSettings> {
