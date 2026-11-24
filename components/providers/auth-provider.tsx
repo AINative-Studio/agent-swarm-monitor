@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import authService, { type AuthUser } from '@/lib/auth-service';
-import { onSessionExpired } from '@/lib/api-client';
+import apiClient, { onSessionExpired } from '@/lib/api-client';
 
 interface AuthContextValue {
     user: AuthUser | null;
@@ -44,6 +44,26 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         return onSessionExpired(() => {
             setUser(null);
         });
+    }, []);
+
+    // Propagate logout across tabs. authService.logout() only clears this
+    // tab's own localStorage and in-memory apiClient token -- a different,
+    // already-open tab never notices on its own (JS memory and the `user`
+    // React state aren't shared across tabs/windows). The browser's `storage`
+    // event fires in every OTHER tab (never the one that made the change)
+    // whenever a localStorage key actually changes, so listening for the
+    // access token key being removed lets every other open tab clear its own
+    // session and redirect immediately, without requiring a manual reload.
+    // See issue #135.
+    useEffect(() => {
+        const handleStorage = (event: StorageEvent) => {
+            if (event.key === 'openclaw_access_token' && event.newValue === null) {
+                apiClient.setToken(null);
+                setUser(null);
+            }
+        };
+        window.addEventListener('storage', handleStorage);
+        return () => window.removeEventListener('storage', handleStorage);
     }, []);
 
     useEffect(() => {
