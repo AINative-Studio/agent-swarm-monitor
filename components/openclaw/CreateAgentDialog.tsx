@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Loader2 } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import ListErrorState from '@/components/openclaw/ListErrorState';
 import type { CreateAgentRequest, HeartbeatInterval, OpenClawTemplate } from '@/types/openclaw';
 import { MODEL_OPTIONS, HEARTBEAT_OPTIONS } from '@/lib/openclaw-utils';
@@ -39,6 +39,12 @@ interface CreateAgentDialogProps {
   template?: OpenClawTemplate | null;
   /** Mutation pending state, surfaced as a disabled/loading submit button. */
   isSubmitting?: boolean;
+  /**
+   * Names of currently existing agents, used to warn (not block) on an
+   * exact-match duplicate before submit -- see issue #146. Optional so the
+   * dialog still renders sensibly if a caller doesn't have the list handy.
+   */
+  existingAgentNames?: string[];
 }
 
 export default function CreateAgentDialog({
@@ -47,6 +53,7 @@ export default function CreateAgentDialog({
   onSubmit,
   template,
   isSubmitting = false,
+  existingAgentNames = [],
 }: CreateAgentDialogProps) {
   const [name, setName] = useState('');
   const [model, setModel] = useState('anthropic/claude-opus-4-5');
@@ -127,6 +134,15 @@ export default function CreateAgentDialog({
   const isValid = name.trim().length > 0;
   const isFromTemplate = !!template;
 
+  // Case-insensitive exact-match duplicate check against the current agent
+  // list -- warns rather than blocks, since duplicate names aren't invalid
+  // data, just a UX footgun (issue #146). Trimmed so trailing/leading
+  // whitespace differences don't dodge the warning.
+  const trimmedName = name.trim();
+  const isDuplicateName =
+    trimmedName.length > 0 &&
+    existingAgentNames.some((existing) => existing.trim().toLowerCase() === trimmedName.toLowerCase());
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-white border-gray-200 sm:max-w-md max-h-[85vh] overflow-y-auto">
@@ -161,7 +177,18 @@ export default function CreateAgentDialog({
               disabled={isSubmitting}
               className="bg-white border-gray-200 text-gray-900 placeholder:text-gray-400"
               autoFocus
+              aria-describedby={isDuplicateName ? 'agent-name-duplicate-warning' : undefined}
             />
+            {isDuplicateName && (
+              <p
+                id="agent-name-duplicate-warning"
+                className="flex items-center gap-1.5 text-xs text-amber-700"
+                role="alert"
+              >
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                An agent named &ldquo;{trimmedName}&rdquo; already exists. You can still create this one, but you&rsquo;ll need another way to tell them apart.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

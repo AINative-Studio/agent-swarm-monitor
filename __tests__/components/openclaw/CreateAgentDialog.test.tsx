@@ -154,6 +154,67 @@ describe('CreateAgentDialog', () => {
         expect(screen.getByText('Creating...')).toBeInTheDocument();
     });
 
+    // Issue #146: Create Agent allowed unlimited duplicate names with zero
+    // disambiguation. A client-side warning (not a hard block, since
+    // duplicates aren't actually invalid data) should appear once the typed
+    // name exactly matches (case-insensitively) an existing agent's name.
+    it('shows a duplicate-name warning when the typed name matches an existing agent, but still allows submitting', async () => {
+        const user = userEvent.setup();
+        const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+        render(
+            <CreateAgentDialog
+                open
+                onOpenChange={vi.fn()}
+                onSubmit={onSubmit}
+                existingAgentNames={['zzqa8-dup-test', 'Other Agent']}
+            />
+        );
+
+        const nameInput = screen.getByLabelText('Name');
+        await user.type(nameInput, 'zzqa8-dup-test');
+
+        expect(screen.getByText(/already exists/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+
+        await user.click(screen.getByRole('button', { name: 'Create' }));
+        expect(onSubmit).toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'zzqa8-dup-test' })
+        );
+    });
+
+    it('matches duplicate names case-insensitively and ignores surrounding whitespace', async () => {
+        const user = userEvent.setup();
+
+        render(
+            <CreateAgentDialog
+                open
+                onOpenChange={vi.fn()}
+                onSubmit={vi.fn()}
+                existingAgentNames={['My Agent']}
+            />
+        );
+
+        await user.type(screen.getByLabelText('Name'), '  MY AGENT  ');
+        expect(screen.getByText(/already exists/i)).toBeInTheDocument();
+    });
+
+    it('does not show a duplicate-name warning for a unique name', async () => {
+        const user = userEvent.setup();
+
+        render(
+            <CreateAgentDialog
+                open
+                onOpenChange={vi.fn()}
+                onSubmit={vi.fn()}
+                existingAgentNames={['Some Other Agent']}
+            />
+        );
+
+        await user.type(screen.getByLabelText('Name'), 'A Brand New Name');
+        expect(screen.queryByText(/already exists/i)).not.toBeInTheDocument();
+    });
+
     it('offers a Retry action in the error banner that resubmits the same data', async () => {
         const user = userEvent.setup();
         const onSubmit = vi.fn().mockRejectedValueOnce(new Error('Not authenticated'))
