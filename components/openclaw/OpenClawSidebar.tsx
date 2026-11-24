@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -16,14 +16,13 @@ import {
   Settings,
   MessageSquare,
   MessagesSquare,
-  ChevronDown,
-  Check,
-  Plus,
   LogOut,
   RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/providers/auth-provider';
+import ComingSoonModal from '@/components/openclaw/ComingSoonModal';
+import { Badge } from '@/components/ui/badge';
 
 interface NavItem {
   name: string;
@@ -46,17 +45,17 @@ const navItems: NavItem[] = [
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
-interface Workspace {
-  id: string;
-  name: string;
-  slug: string;
-}
-
-const STUB_WORKSPACES: Workspace[] = [
-  { id: 'workspace_1', name: 'AINative Studio', slug: 'ainative-studio' },
-  { id: 'workspace_2', name: 'AgentClaw Labs', slug: 'agentclaw-labs' },
-  { id: 'workspace_3', name: 'Personal', slug: 'personal' },
-];
+// Multi-workspace switching is not backed by anything real yet: there is no
+// API endpoint that scopes agents/swarms/templates/team data by workspace,
+// and the authenticated user only ever has a single, fixed `workspaceId`.
+// A three-item stub list that silently "switches" was purely cosmetic and
+// didn't even persist across navigation (issue #136) -- worse, it implied a
+// multi-tenant data-isolation boundary that doesn't exist. Rather than fake
+// persistence (which would still be misleading about real data scoping),
+// this surfaces the user's one real workspace and marks the switcher itself
+// as not-yet-functional via the same ComingSoonModal pattern used for the
+// Gmail/LinkedIn integrations and the Settings 2FA/sessions buttons.
+const DEFAULT_WORKSPACE_NAME = 'AINative Studio';
 
 interface OpenClawSidebarProps {
   userName?: string;
@@ -76,22 +75,8 @@ export default function OpenClawSidebar({
   const userName = user?.fullName || propUserName || 'User';
   const userEmail = user?.email || propUserEmail || '';
   const userInitials = propUserInitials || userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-  const [activeWorkspace, setActiveWorkspace] = useState<Workspace>(STUB_WORKSPACES[0]);
-  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
-  const workspacePickerRef = useRef<HTMLDivElement>(null);
-
-  const handleClickOutside = useCallback((e: MouseEvent) => {
-    if (workspacePickerRef.current && !workspacePickerRef.current.contains(e.target as Node)) {
-      setWorkspacePickerOpen(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (workspacePickerOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [workspacePickerOpen, handleClickOutside]);
+  const workspaceName = DEFAULT_WORKSPACE_NAME;
+  const [workspaceComingSoonOpen, setWorkspaceComingSoonOpen] = useState(false);
 
   const isActive = (href: string) => {
     if (href === '/') {
@@ -109,19 +94,17 @@ export default function OpenClawSidebar({
       role="navigation"
       aria-label="OpenClaw navigation"
     >
-      {/* Workspace picker */}
-      <div className="relative px-2 pt-4 pb-4" ref={workspacePickerRef}>
+      {/* Workspace indicator -- multi-workspace switching isn't backed by
+          any real data scoping yet (see comment above DEFAULT_WORKSPACE_NAME),
+          so this shows the user's one real workspace and opens a "Coming
+          soon" notice on click instead of pretending to switch anything. */}
+      <div className="relative px-2 pt-4 pb-4">
         <button
           type="button"
-          onClick={() => setWorkspacePickerOpen((prev) => !prev)}
-          className={cn(
-            'flex items-center gap-2 w-full px-2 py-2 rounded-lg text-left transition-colors',
-            'hover:bg-[#F0EFEC]',
-            workspacePickerOpen && 'bg-[#F0EFEC]'
-          )}
-          aria-expanded={workspacePickerOpen}
-          aria-haspopup="listbox"
-          aria-label="Switch workspace"
+          onClick={() => setWorkspaceComingSoonOpen(true)}
+          className="flex items-center gap-2 w-full px-2 py-2 rounded-lg text-left transition-colors hover:bg-[#F0EFEC]"
+          aria-haspopup="dialog"
+          aria-label="Switch workspace (coming soon)"
         >
           <svg
             viewBox="0 0 48 42"
@@ -156,66 +139,21 @@ export default function OpenClawSidebar({
             />
           </svg>
           <span className="text-sm font-semibold text-gray-900 truncate min-w-0">
-            {activeWorkspace.name}
+            {workspaceName}
           </span>
-          <ChevronDown
-            className={cn(
-              'h-3.5 w-3.5 text-gray-400 ml-auto shrink-0 transition-transform duration-150',
-              workspacePickerOpen && 'rotate-180'
-            )}
-            aria-hidden="true"
-          />
-        </button>
-
-        {workspacePickerOpen && (
-          <div
-            className="absolute left-2 right-2 top-full z-50 mt-1 rounded-lg border border-[#EEECEA] bg-white shadow-lg py-1"
-            role="listbox"
-            aria-label="Workspaces"
+          <Badge
+            className="ml-auto shrink-0 bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0 font-medium hover:bg-amber-50"
           >
-            <div className="px-3 py-1.5">
-              <p className="text-[11px] font-medium text-[#8C8C8C] uppercase tracking-wider">
-                Workspaces
-              </p>
-            </div>
-            {STUB_WORKSPACES.map((workspace) => (
-              <button
-                key={workspace.id}
-                type="button"
-                role="option"
-                aria-selected={workspace.id === activeWorkspace.id}
-                onClick={() => {
-                  setActiveWorkspace(workspace);
-                  setWorkspacePickerOpen(false);
-                }}
-                className={cn(
-                  'flex items-center gap-2 w-full px-3 py-2 text-sm text-left transition-colors',
-                  'hover:bg-[#F5F4F1]',
-                  workspace.id === activeWorkspace.id && 'text-gray-900 font-medium'
-                )}
-              >
-                <span className="flex h-5 w-5 items-center justify-center rounded bg-[#F0EFEC] text-[10px] font-semibold text-[#6B6B6B] shrink-0">
-                  {workspace.name.charAt(0)}
-                </span>
-                <span className="truncate min-w-0">{workspace.name}</span>
-                {workspace.id === activeWorkspace.id && (
-                  <Check className="h-3.5 w-3.5 text-[#5867EF] ml-auto shrink-0" />
-                )}
-              </button>
-            ))}
-            <div className="border-t border-[#EEECEA] mt-1 pt-1">
-              <button
-                type="button"
-                onClick={() => setWorkspacePickerOpen(false)}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[#6B6B6B] hover:bg-[#F5F4F1] hover:text-gray-900 transition-colors"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Create workspace</span>
-              </button>
-            </div>
-          </div>
-        )}
+            Coming soon
+          </Badge>
+        </button>
       </div>
+
+      <ComingSoonModal
+        open={workspaceComingSoonOpen}
+        onOpenChange={setWorkspaceComingSoonOpen}
+        channelName="Multi-workspace switching"
+      />
 
       {/* Navigation items */}
       <nav className="flex-1 px-2 space-y-0.5">
