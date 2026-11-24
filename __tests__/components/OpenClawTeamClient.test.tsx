@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -12,6 +12,8 @@ vi.mock('@/lib/team-service', () => ({
   default: {
     listMembers: vi.fn(),
     inviteMember: vi.fn(),
+    removeMember: vi.fn(),
+    updateMemberRole: vi.fn(),
   },
 }));
 
@@ -21,6 +23,8 @@ import OpenClawTeamClient from '@/app/team/OpenClawTeamClient';
 
 const mockListMembers = vi.mocked(teamService.listMembers);
 const mockInviteMember = vi.mocked(teamService.inviteMember);
+const mockRemoveMember = vi.mocked(teamService.removeMember);
+const mockUpdateMemberRole = vi.mocked(teamService.updateMemberRole);
 
 function renderWithQueryClient() {
   const queryClient = new QueryClient({
@@ -34,6 +38,11 @@ function renderWithQueryClient() {
 }
 
 describe('OpenClawTeamClient', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+
   it('shows a visible error instead of "Members (0)" when the fetch fails', async () => {
     mockListMembers.mockRejectedValue(new ApiError(401, 'Not authenticated'));
 
@@ -110,5 +119,83 @@ describe('OpenClawTeamClient', () => {
 
     expect(await screen.findByText('Admin Person')).toBeInTheDocument();
     expect(screen.getAllByText('Admin').length).toBeGreaterThan(0);
+  });
+
+  // Issue #142 (originally scoped in #8 and never shipped): remove-member
+  // and role-change actions must exist and call the real backend endpoints.
+  it('removes a member after confirming the AlertDialog', async () => {
+    const user = userEvent.setup();
+    mockListMembers.mockResolvedValue({
+      members: [
+        { id: 'member-1', name: 'Test Person', email: 'test@example.com', role: 'VIEWER', avatarInitials: 'TP' },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    mockRemoveMember.mockResolvedValue(undefined);
+
+    renderWithQueryClient();
+
+    expect(await screen.findByText('Test Person')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Remove Test Person' }));
+    expect(await screen.findByText('Remove Team Member')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => expect(mockRemoveMember).toHaveBeenCalledWith('member-1'));
+  });
+
+  it('does not remove a member when the confirmation dialog is cancelled', async () => {
+    const user = userEvent.setup();
+    mockListMembers.mockResolvedValue({
+      members: [
+        { id: 'member-1', name: 'Test Person', email: 'test@example.com', role: 'VIEWER', avatarInitials: 'TP' },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+
+    renderWithQueryClient();
+
+    expect(await screen.findByText('Test Person')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Remove Test Person' }));
+    expect(await screen.findByText('Remove Team Member')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(mockRemoveMember).not.toHaveBeenCalled();
+  });
+
+  it('changes a member role via the per-row select, calling PUT /team/members/{id}/role', async () => {
+    const user = userEvent.setup();
+    mockListMembers.mockResolvedValue({
+      members: [
+        { id: 'member-1', name: 'Test Person', email: 'test@example.com', role: 'VIEWER', avatarInitials: 'TP' },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    mockUpdateMemberRole.mockResolvedValue({
+      id: 'member-1',
+      name: 'Test Person',
+      email: 'test@example.com',
+      role: 'ADMIN',
+      avatarInitials: 'TP',
+    });
+
+    renderWithQueryClient();
+
+    expect(await screen.findByText('Test Person')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox', { name: 'Change role for Test Person' }));
+    await user.click(await screen.findByRole('option', { name: 'Admin' }));
+
+    await waitFor(() =>
+      expect(mockUpdateMemberRole).toHaveBeenCalledWith('member-1', { role: 'ADMIN' })
+    );
   });
 });

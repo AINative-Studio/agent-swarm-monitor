@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { UserPlus, Crown, Pencil, Eye, Circle, Loader2 } from 'lucide-react';
+import { UserPlus, Crown, Pencil, Eye, Circle, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -13,8 +13,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import teamService from '@/lib/team-service';
 import ListErrorState, { getErrorMessage } from '@/components/openclaw/ListErrorState';
+import { toast } from '@/hooks/use-toast';
 import type { TeamMember, TeamMemberRole } from '@/types/openclaw';
 
 const fadeUp = {
@@ -67,9 +78,13 @@ const roleConfig: Record<
 
 interface MemberRowProps {
   member: TeamMember;
+  onRoleChange: (memberId: string, role: TeamMemberRole) => void;
+  onRemove: (member: TeamMember) => void;
+  isRoleChangePending: boolean;
+  isRemovePending: boolean;
 }
 
-function MemberRow({ member }: MemberRowProps) {
+function MemberRow({ member, onRoleChange, onRemove, isRoleChangePending, isRemovePending }: MemberRowProps) {
   // Defensive fallback: member.role comes straight from the real backend, so
   // guard against a role value this frontend doesn't (yet) know how to label
   // rather than crashing the whole list on an unrecognized value.
@@ -80,6 +95,7 @@ function MemberRow({ member }: MemberRowProps) {
     badgeClass: 'bg-gray-50 text-gray-600 border-gray-200',
   };
   const RoleIcon = config.icon;
+  const isBusy = isRoleChangePending || isRemovePending;
 
   return (
     <div className="flex items-center gap-4 py-4">
@@ -90,17 +106,53 @@ function MemberRow({ member }: MemberRowProps) {
         {member.avatarInitials}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-gray-900">{member.name}</p>
-          <span
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${config.badgeClass}`}
-          >
-            <RoleIcon className="h-3 w-3" />
-            {config.label}
-          </span>
-        </div>
+        <p className="text-sm font-medium text-gray-900">{member.name}</p>
         <p className="text-sm text-gray-500 mt-0.5">{member.email}</p>
       </div>
+      <Select
+        value={member.role in roleConfig ? member.role : undefined}
+        onValueChange={(value) => onRoleChange(member.id, value as TeamMemberRole)}
+        disabled={isBusy}
+      >
+        <SelectTrigger
+          aria-label={`Change role for ${member.name}`}
+          className={`w-[130px] text-xs font-medium border ${config.badgeClass}`}
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <RoleIcon className="h-3 w-3" />
+            <SelectValue placeholder={config.label} />
+          </span>
+        </SelectTrigger>
+        <SelectContent className="bg-white border-gray-200">
+          <SelectItem value="VIEWER" className="text-gray-900 text-sm">
+            Viewer
+          </SelectItem>
+          <SelectItem value="MEMBER" className="text-gray-900 text-sm">
+            Member
+          </SelectItem>
+          <SelectItem value="ADMIN" className="text-gray-900 text-sm">
+            Admin
+          </SelectItem>
+          <SelectItem value="OWNER" className="text-gray-900 text-sm">
+            Owner
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => onRemove(member)}
+        disabled={isBusy}
+        aria-label={`Remove ${member.name}`}
+        className="text-gray-400 hover:text-red-600 hover:bg-red-50 shrink-0"
+      >
+        {isRemovePending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Trash2 className="h-4 w-4" />
+        )}
+      </Button>
     </div>
   );
 }
@@ -114,6 +166,7 @@ function getInitials(name: string): string {
 export default function OpenClawTeamClient() {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<TeamMemberRole>('VIEWER');
+  const [removeTarget, setRemoveTarget] = useState<TeamMember | null>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -141,6 +194,58 @@ export default function OpenClawTeamClient() {
   const handleAddMember = () => {
     if (!email.trim()) return;
     inviteMutation.mutate({ email: email.trim(), name: email.split('@')[0], role });
+  };
+
+  // Issue #142 / originally scoped (and never shipped) in issue #8: finishes
+  // the Team page's acceptance criteria with a remove-member action and a
+  // role-change control, both backed by the real, already-working backend
+  // endpoints (DELETE /team/members/{id}, PUT /team/members/{id}/role).
+  const roleMutation = useMutation({
+    mutationFn: ({ memberId, newRole }: { memberId: string; newRole: TeamMemberRole }) =>
+      teamService.updateMemberRole(memberId, { role: newRole }),
+    onSuccess: (_, { newRole }) => {
+      queryClient.invalidateQueries({ queryKey: ['team-members'] });
+      toast({
+        title: 'Role updated',
+        description: `Member role changed to ${roleConfig[newRole]?.label ?? newRole}.`,
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: 'Failed to update role',
+        description: getErrorMessage(err, 'Could not change this member’s role.'),
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (memberId: string) => teamService.removeMember(memberId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['team-members'] });
+      toast({
+        title: 'Member removed',
+        description: removeTarget ? `${removeTarget.name} has been removed from the workspace.` : undefined,
+      });
+      setRemoveTarget(null);
+    },
+    onError: (err) => {
+      toast({
+        title: 'Failed to remove member',
+        description: getErrorMessage(err, 'Could not remove this member.'),
+        variant: 'destructive',
+      });
+      setRemoveTarget(null);
+    },
+  });
+
+  const handleRoleChange = (memberId: string, newRole: TeamMemberRole) => {
+    roleMutation.mutate({ memberId, newRole });
+  };
+
+  const confirmRemove = () => {
+    if (!removeTarget) return;
+    removeMutation.mutate(removeTarget.id);
   };
 
   return (
@@ -255,7 +360,16 @@ export default function OpenClawTeamClient() {
             </div>
           ) : (
             members.map((member) => (
-              <MemberRow key={member.id} member={member} />
+              <MemberRow
+                key={member.id}
+                member={member}
+                onRoleChange={handleRoleChange}
+                onRemove={setRemoveTarget}
+                isRoleChangePending={
+                  roleMutation.isPending && roleMutation.variables?.memberId === member.id
+                }
+                isRemovePending={removeMutation.isPending && removeMutation.variables === member.id}
+              />
             ))
           )}
         </div>
@@ -295,6 +409,31 @@ export default function OpenClawTeamClient() {
           })}
         </div>
       </motion.div>
+
+      {/* Remove member confirmation dialog -- matches the delete-confirmation
+          pattern used on the agent detail page's Danger Zone. */}
+      <AlertDialog open={!!removeTarget} onOpenChange={(open) => !open && setRemoveTarget(null)}>
+        <AlertDialogContent className="bg-white border-gray-200">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-gray-900">Remove Team Member</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-500">
+              Are you sure you want to remove {removeTarget?.name} ({removeTarget?.email}) from
+              this workspace? They will lose access immediately. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-gray-200 text-gray-700 bg-white hover:bg-gray-50">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRemove}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
