@@ -1,9 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import apiClient, { ApiError, snakeToCamelKeys, camelToSnakeKeys } from '@/lib/api-client';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import apiClient, { ApiError, snakeToCamelKeys, camelToSnakeKeys, onSessionExpired } from '@/lib/api-client';
 
 describe('ApiClient', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
+        apiClient.setToken(null);
+        localStorage.clear();
     });
 
     describe('snakeToCamelKeys', () => {
@@ -143,6 +145,136 @@ describe('ApiClient', () => {
                 'http://localhost:8001/api/v1/agents/123',
                 expect.objectContaining({ method: 'DELETE' })
             );
+        });
+    });
+
+    describe('token refresh on 401 (issue #124)', () => {
+        afterEach(() => {
+            apiClient.setToken(null);
+            localStorage.clear();
+        });
+
+        it('refreshes the access token and retries the original request once on 401', async () => {
+            apiClient.setToken('stale-access-token');
+            localStorage.setItem('openclaw_refresh_token', 'valid-refresh-token');
+
+            // First call to the real endpoint 401s; the retried call (made
+            // after a successful refresh) should carry the new token and
+            // succeed.
+            let agentsCallCount = 0;
+            vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+                const u = String(url);
+                if (u.includes('/auth/refresh')) {
+                    expect((options as RequestInit)?.headers).toMatchObject({
+                        Authorization: 'Bearer valid-refresh-token',
+                    });
+                    return new Response(JSON.stringify({ access_token: 'new-access-token' }), { status: 200 });
+                }
+                agentsCallCount += 1;
+                if (agentsCallCount === 1) {
+                    return new Response(JSON.stringify({ detail: 'expired' }), { status: 401 });
+                }
+                expect((options as RequestInit)?.headers).toMatchObject({
+                    Authorization: 'Bearer new-access-token',
+                });
+                return new Response(JSON.stringify({ agent_id: '1' }), { status: 200 });
+            });
+
+            const result = await apiClient.get<{ agentId: string }>('/agents/1');
+
+            expect(result).toEqual({ agentId: '1' });
+            expect(agentsCallCount).toBe(2);
+            expect(localStorage.getItem('openclaw_access_token')).toBe('new-access-token');
+        });
+
+        it('de-dupes concurrent refresh attempts into a single in-flight call', async () => {
+            apiClient.setToken('stale-access-token');
+            localStorage.setItem('openclaw_refresh_token', 'valid-refresh-token');
+
+            let refreshCallCount = 0;
+            let agentsCallCount = 0;
+            vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+                const u = String(url);
+                if (u.includes('/auth/refresh')) {
+                    refreshCallCount += 1;
+                    return new Response(JSON.stringify({ access_token: 'new-access-token' }), { status: 200 });
+                }
+                agentsCallCount += 1;
+                // Every first-pass call to any agents endpoint 401s; the
+                // retried (second) calls succeed.
+                if (agentsCallCount <= 3) {
+                    return new Response(JSON.stringify({ detail: 'expired' }), { status: 401 });
+                }
+                return new Response(JSON.stringify({ ok: true }), { status: 200 });
+            });
+
+            await Promise.all([
+                apiClient.get('/agents/1'),
+                apiClient.get('/agents/2'),
+                apiClient.get('/agents/3'),
+            ]);
+
+            expect(refreshCallCount).toBe(1);
+        });
+
+        it('forces logout and notifies session-expired listeners when refresh fails', async () => {
+            apiClient.setToken('stale-access-token');
+            localStorage.setItem('openclaw_refresh_token', 'invalid-refresh-token');
+            localStorage.setItem('openclaw_user', JSON.stringify({ userId: 'u1' }));
+
+            vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+                const u = String(url);
+                if (u.includes('/auth/refresh')) {
+                    return new Response(JSON.stringify({ detail: 'Invalid refresh token' }), { status: 401 });
+                }
+                return new Response(JSON.stringify({ detail: 'expired' }), { status: 401 });
+            });
+
+            const listener = vi.fn();
+            const unsubscribe = onSessionExpired(listener);
+
+            await expect(apiClient.get('/agents/1')).rejects.toBeInstanceOf(ApiError);
+
+            expect(listener).toHaveBeenCalledTimes(1);
+            expect(localStorage.getItem('openclaw_access_token')).toBeNull();
+            expect(localStorage.getItem('openclaw_refresh_token')).toBeNull();
+            expect(localStorage.getItem('openclaw_user')).toBeNull();
+
+            unsubscribe();
+        });
+
+        it('forces logout when there is no refresh token at all to attempt', async () => {
+            apiClient.setToken('stale-access-token');
+            // No refresh token in localStorage.
+
+            vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+                new Response(JSON.stringify({ detail: 'expired' }), { status: 401 })
+            );
+
+            const listener = vi.fn();
+            const unsubscribe = onSessionExpired(listener);
+
+            await expect(apiClient.get('/agents/1')).rejects.toBeInstanceOf(ApiError);
+
+            expect(listener).toHaveBeenCalledTimes(1);
+            unsubscribe();
+        });
+
+        it('does not attempt refresh or logout for an anonymous 401 (no token held)', async () => {
+            // apiClient.setToken(null) via beforeEach -- no session at all.
+            const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+                new Response(JSON.stringify({ detail: 'unauthorized' }), { status: 401 })
+            );
+
+            const listener = vi.fn();
+            const unsubscribe = onSessionExpired(listener);
+
+            await expect(apiClient.get('/agents/1')).rejects.toBeInstanceOf(ApiError);
+
+            // Only the one original call -- no /auth/refresh call attempted.
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+            expect(listener).not.toHaveBeenCalled();
+            unsubscribe();
         });
     });
 });

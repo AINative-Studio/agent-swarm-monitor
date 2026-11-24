@@ -5,6 +5,34 @@
  * for communicating with the backend REST API.
  */
 
+import { toast } from '@/hooks/use-toast';
+
+// Same localStorage keys lib/auth-service.ts writes on login (kept as
+// literal strings here, not imported, to avoid a circular import -- auth-service.ts
+// imports apiClient as its HTTP layer). e2e/chat-history.spec.ts also seeds
+// these exact literal keys directly, so don't rename without updating both.
+const TOKEN_KEY = 'openclaw_access_token';
+const REFRESH_KEY = 'openclaw_refresh_token';
+const USER_KEY = 'openclaw_user';
+
+type SessionExpiredListener = () => void;
+const sessionExpiredListeners: SessionExpiredListener[] = [];
+
+/**
+ * Subscribe to "session is dead, no automatic recovery possible" events --
+ * e.g. refresh token missing/expired after a 401. components/providers/auth-provider.tsx
+ * uses this to clear its in-memory `user` state so its existing
+ * `!user && pathname !== '/login'` redirect guard fires without needing a
+ * full page reload. See issue #124.
+ */
+export function onSessionExpired(listener: SessionExpiredListener): () => void {
+    sessionExpiredListeners.push(listener);
+    return () => {
+        const index = sessionExpiredListeners.indexOf(listener);
+        if (index > -1) sessionExpiredListeners.splice(index, 1);
+    };
+}
+
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 function snakeToCamel(str: string): string {
@@ -76,6 +104,10 @@ class ApiClient {
     private baseUrl: string;
     private defaultTimeout: number = 30000; // 30 seconds
     private token: string | null = null;
+    // De-dupes concurrent refresh attempts: multiple requests 401-ing around
+    // the same time (e.g. several polling queries) all await this single
+    // in-flight refresh call instead of each hitting /auth/refresh themselves.
+    private refreshPromise: Promise<string | null> | null = null;
 
     constructor() {
         this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api/v1';
@@ -87,6 +119,120 @@ class ApiClient {
 
     private get authHeaders(): Record<string, string> {
         return this.token ? { Authorization: `Bearer ${this.token}` } : {};
+    }
+
+    private getRefreshToken(): string | null {
+        if (typeof window === 'undefined') return null;
+        return localStorage.getItem(REFRESH_KEY);
+    }
+
+    /**
+     * Clear the dead session and tell any listeners (auth-provider.tsx) so
+     * the app's existing logged-out redirect guard takes over. Issue #124:
+     * once a refresh attempt fails (or there's no refresh token to try),
+     * there is no automatic recovery path other than signing in again.
+     */
+    private forceLogout(message?: string) {
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem(TOKEN_KEY);
+            localStorage.removeItem(REFRESH_KEY);
+            localStorage.removeItem(USER_KEY);
+        }
+        this.setToken(null);
+
+        if (message) {
+            toast({
+                title: 'Session expired',
+                description: message,
+                variant: 'destructive',
+            });
+        }
+
+        sessionExpiredListeners.forEach((listener) => listener());
+    }
+
+    /**
+     * Attempt exactly one token refresh, de-duped across concurrent callers.
+     * Returns the new access token on success, or null if refresh was not
+     * possible/failed (no refresh token, or the backend rejected it -- e.g.
+     * the refresh token itself is also expired/invalid).
+     */
+    private async refreshAccessToken(): Promise<string | null> {
+        if (this.refreshPromise) {
+            return this.refreshPromise;
+        }
+
+        const refreshToken = this.getRefreshToken();
+        if (!refreshToken) {
+            return null;
+        }
+
+        this.refreshPromise = (async () => {
+            try {
+                const response = await fetch(`${this.baseUrl}/auth/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${refreshToken}`,
+                    },
+                });
+
+                if (!response.ok) {
+                    return null;
+                }
+
+                const data = await response.json();
+                const newAccessToken: string | undefined = data?.access_token;
+                if (!newAccessToken) {
+                    return null;
+                }
+
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem(TOKEN_KEY, newAccessToken);
+                }
+                this.setToken(newAccessToken);
+                return newAccessToken;
+            } catch {
+                // Network error, malformed response, etc. -- treat as refresh
+                // failure so the caller falls back to forceLogout().
+                return null;
+            } finally {
+                this.refreshPromise = null;
+            }
+        })();
+
+        return this.refreshPromise;
+    }
+
+    /**
+     * Runs one request attempt via `send`. On a 401, tries exactly one
+     * refresh-and-retry; if that doesn't recover, forces logout + redirect
+     * rather than leaving the caller to 401 forever with no recovery path.
+     * `send` is called again (not the raw fetch) on retry so the Authorization
+     * header picks up the freshly-refreshed token via `this.authHeaders`.
+     */
+    private async withAuthRetry<T>(send: () => Promise<Response>): Promise<T> {
+        let response = await send();
+
+        if (response.status === 401) {
+            // Only worth attempting a refresh if we were actually holding a
+            // session (an anonymous 401 -- e.g. hitting a protected route
+            // before ever logging in -- has no token to refresh and no
+            // session to kill).
+            const hadToken = this.token !== null;
+
+            const newToken = await this.refreshAccessToken();
+            if (newToken) {
+                response = await send();
+            } else if (hadToken) {
+                // Refresh wasn't possible (no/invalid refresh token) or the
+                // backend rejected it -- the session is genuinely dead with
+                // no automatic recovery path left. See issue #124.
+                this.forceLogout('Your session expired, please sign in again.');
+            }
+        }
+
+        return this.handleResponse<T>(response);
     }
 
     private async fetchWithTimeout(
@@ -149,84 +295,90 @@ class ApiClient {
 
     async get<T>(path: string, params?: Record<string, string>, timeoutMs?: number): Promise<T> {
         const url = this.buildUrl(path, params);
-        const response = await this.fetchWithTimeout(
-            url,
-            {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
-            },
-            timeoutMs
+        return this.withAuthRetry<T>(() =>
+            this.fetchWithTimeout(
+                url,
+                {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json', ...this.authHeaders },
+                },
+                timeoutMs
+            )
         );
-        return this.handleResponse<T>(response);
     }
 
     async post<T>(path: string, body?: unknown, timeoutMs?: number): Promise<T> {
         const url = this.buildUrl(path);
-        const response = await this.fetchWithTimeout(
-            url,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
-                body: body ? JSON.stringify(camelToSnakeKeys(body)) : undefined,
-            },
-            timeoutMs
+        return this.withAuthRetry<T>(() =>
+            this.fetchWithTimeout(
+                url,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...this.authHeaders },
+                    body: body ? JSON.stringify(camelToSnakeKeys(body)) : undefined,
+                },
+                timeoutMs
+            )
         );
-        return this.handleResponse<T>(response);
     }
 
     async put<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
         const url = this.buildUrl(path);
-        const response = await this.fetchWithTimeout(
-            url,
-            {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
-                body: JSON.stringify(camelToSnakeKeys(body)),
-            },
-            timeoutMs
+        return this.withAuthRetry<T>(() =>
+            this.fetchWithTimeout(
+                url,
+                {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', ...this.authHeaders },
+                    body: JSON.stringify(camelToSnakeKeys(body)),
+                },
+                timeoutMs
+            )
         );
-        return this.handleResponse<T>(response);
     }
 
     async patch<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
         const url = this.buildUrl(path);
-        const response = await this.fetchWithTimeout(
-            url,
-            {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
-                body: JSON.stringify(camelToSnakeKeys(body)),
-            },
-            timeoutMs
+        return this.withAuthRetry<T>(() =>
+            this.fetchWithTimeout(
+                url,
+                {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', ...this.authHeaders },
+                    body: JSON.stringify(camelToSnakeKeys(body)),
+                },
+                timeoutMs
+            )
         );
-        return this.handleResponse<T>(response);
     }
 
     async delete(path: string, timeoutMs?: number): Promise<void> {
         const url = this.buildUrl(path);
-        const response = await this.fetchWithTimeout(
-            url,
-            {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
-            },
-            timeoutMs
+        await this.withAuthRetry<void>(() =>
+            this.fetchWithTimeout(
+                url,
+                {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json', ...this.authHeaders },
+                },
+                timeoutMs
+            )
         );
-        await this.handleResponse<void>(response);
     }
 
     async deleteWithBody<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
         const url = this.buildUrl(path);
-        const response = await this.fetchWithTimeout(
-            url,
-            {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json', ...this.authHeaders },
-                body: JSON.stringify(camelToSnakeKeys(body)),
-            },
-            timeoutMs
+        return this.withAuthRetry<T>(() =>
+            this.fetchWithTimeout(
+                url,
+                {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json', ...this.authHeaders },
+                    body: JSON.stringify(camelToSnakeKeys(body)),
+                },
+                timeoutMs
+            )
         );
-        return this.handleResponse<T>(response);
     }
 }
 

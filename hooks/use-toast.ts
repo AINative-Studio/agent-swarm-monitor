@@ -3,7 +3,7 @@
  * This is a minimal implementation for the integrations feature
  */
 
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 
 export interface Toast {
   id: string;
@@ -22,27 +22,31 @@ interface ToastOptions {
 let toastId = 0;
 const listeners: Array<(toast: Toast) => void> = [];
 
+/**
+ * Fire a toast notification. Plain function (not a hook) so it can be
+ * called from non-component modules -- e.g. lib/api-client.ts raising a
+ * "session expired" toast when a token refresh fails. useToast() below
+ * delegates to this for component call sites.
+ */
+export function toast(options: ToastOptions): { id: string } {
+  const id = `toast-${toastId++}`;
+  const newToast: Toast = {
+    id,
+    ...options,
+  };
+
+  // Notify all listeners
+  listeners.forEach((listener) => listener(newToast));
+
+  // Auto-dismiss after 3 seconds
+  setTimeout(() => {
+    // This would normally remove the toast, but for simplicity we'll just let it fade
+  }, 3000);
+
+  return { id };
+}
+
 export function useToast() {
-  const [, setUpdate] = useState(0);
-
-  const toast = useCallback((options: ToastOptions) => {
-    const id = `toast-${toastId++}`;
-    const newToast: Toast = {
-      id,
-      ...options,
-    };
-
-    // Notify all listeners
-    listeners.forEach((listener) => listener(newToast));
-
-    // Auto-dismiss after 3 seconds
-    setTimeout(() => {
-      // This would normally remove the toast, but for simplicity we'll just let it fade
-    }, 3000);
-
-    return { id };
-  }, []);
-
   const dismiss = useCallback((toastId?: string) => {
     // Toast dismissal logic would go here
   }, []);

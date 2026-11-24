@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import authService, { type AuthUser } from '@/lib/auth-service';
+import { onSessionExpired } from '@/lib/api-client';
 
 interface AuthContextValue {
     user: AuthUser | null;
@@ -32,6 +33,17 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         const restored = authService.restoreSession();
         setUser(restored);
         setIsLoading(false);
+    }, []);
+
+    // lib/api-client.ts forces a dead session's tokens out of localStorage
+    // (e.g. a failed token refresh -- issue #124) but has no React state of
+    // its own to update. Clear `user` here so the redirect guard below fires
+    // immediately instead of waiting for a future render/reload to notice
+    // the tokens are gone.
+    useEffect(() => {
+        return onSessionExpired(() => {
+            setUser(null);
+        });
     }, []);
 
     useEffect(() => {
