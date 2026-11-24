@@ -296,7 +296,7 @@ export function ChannelAuthDialog({
               ) : (
                 <div className="text-center py-8">
                   <p className="text-sm text-gray-500">
-                    Click "Generate QR Code" below to start the connection process
+                    Click &quot;Generate QR Code&quot; below to start the connection process
                   </p>
                 </div>
               )}
