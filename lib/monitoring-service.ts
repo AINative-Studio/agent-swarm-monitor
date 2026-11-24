@@ -48,19 +48,26 @@ class MonitoringService {
         const v = (name: string) => getMetricValue(m, name) ?? 0;
         return {
             timestamp: new Date().toISOString(),
-            taskAssignmentTotal: v('openclaw_task_assignment'),
+            // Verified live against `GET /metrics` TYPE declarations (2026-11-23).
+            // Backend emits plural/renamed series vs. what this code previously queried:
+            taskAssignmentTotal: v('openclaw_task_assignments'),
+            // The four fields below have no corresponding backend series at all (no
+            // `# TYPE openclaw_*` line in the live output) — they will always be 0
+            // until the backend actually emits them. Left wired so the UI picks them
+            // up automatically once the backend adds them; `?? 0` in `v()` keeps them
+            // from throwing in the meantime.
             taskAssignmentRejectedTotal: v('openclaw_task_assignment_rejected'),
             taskResultSubmittedTotal: v('openclaw_task_result_submitted'),
             taskResultDuplicateTotal: v('openclaw_task_result_duplicate'),
             taskResultInvalidTotal: v('openclaw_task_result_invalid'),
-            taskRequeuedTotal: v('openclaw_task_requeued'),
-            leaseIssuedTotal: v('openclaw_lease_issued'),
-            leaseExpiredTotal: v('openclaw_lease_expired'),
-            leaseRevokedTotal: v('openclaw_lease_revoked'),
+            taskRequeuedTotal: v('openclaw_tasks_requeued'),
+            leaseIssuedTotal: v('openclaw_leases_issued'),
+            leaseExpiredTotal: v('openclaw_leases_expired'),
+            leaseRevokedTotal: v('openclaw_leases_revoked'),
             activeLeasesCount: v('openclaw_active_leases'),
-            nodeCrashDetectedTotal: v('openclaw_node_crash_detected'),
-            partitionDetectedTotal: v('openclaw_partition_detected'),
-            recoveryTriggeredTotal: v('openclaw_recovery_triggered'),
+            nodeCrashDetectedTotal: v('openclaw_node_crashes'),
+            partitionDetectedTotal: v('openclaw_partition_events'),
+            recoveryTriggeredTotal: v('openclaw_recovery_operations'),
             bufferSize: v('openclaw_buffer_size'),
             bufferUtilizationPercent: v('openclaw_buffer_utilization_percent'),
             partitionDegraded: v('openclaw_partition_degraded'),
