@@ -182,4 +182,42 @@ describe('AgentChatTab', () => {
 
     fetchSpy.mockRestore();
   });
+
+  it('still renders newly sent/received messages after the initial history load failed (issue #126)', async () => {
+    const user = userEvent.setup();
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // Simulate the real-world repro: history fetch 403s (not a 404, so
+    // loadError gets set), but the agent still accepts new messages fine.
+    mockedConversationService.listConversations.mockRejectedValue(
+      new ApiError(403, 'Forbidden')
+    );
+    mockedOpenclawService.sendMessage.mockResolvedValue({
+      messageId: 'msg-reply-1',
+      conversationId: 'conv-new',
+      response: 'Hi! How can I help?',
+    });
+
+    render(<AgentChatTab agent={mockAgent} />);
+
+    // Before sending anything, the error state is the correct thing to show
+    // (no messages exist yet).
+    await waitFor(() => {
+      expect(screen.getByText("Couldn't load this conversation.")).toBeInTheDocument();
+    });
+
+    const input = screen.getByLabelText('Chat message input');
+    await user.type(input, 'Hello, what is your current status?');
+    await user.click(screen.getByLabelText('Send message'));
+
+    // Once real messages exist in local state, they must render -- the
+    // permanent "Couldn't load this conversation." error must not mask them.
+    await waitFor(() => {
+      expect(screen.getByText('Hello, what is your current status?')).toBeInTheDocument();
+      expect(screen.getByText('Hi! How can I help?')).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Couldn't load this conversation.")).not.toBeInTheDocument();
+
+    consoleWarnSpy.mockRestore();
+  });
 });

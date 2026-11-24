@@ -165,27 +165,20 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
             <Loader2 className="h-8 w-8 text-gray-400 animate-spin mb-3" />
             <p className="text-sm text-gray-500">Loading conversation...</p>
           </div>
-        ) : loadError ? (
-          <div className="flex flex-col items-center justify-center h-full px-8">
-            <ListErrorState
-              error={loadError}
-              onRetry={fetchMessages}
-              message="Couldn't load this conversation."
-              className="w-full max-w-md"
-            />
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-8">
-            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 mb-4">
-              <MessageSquare className="h-6 w-6 text-gray-400" />
-            </div>
-            <p className="text-sm text-gray-500 leading-relaxed max-w-md">
-              Send a message to start chatting with your agent.
-              The agent will use its configured model and persona to respond.
-            </p>
-          </div>
-        ) : (
+        ) : messages.length > 0 ? (
           <div className="space-y-4">
+            {Boolean(loadError) && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                Couldn&apos;t load earlier message history, but your current conversation is shown below.{' '}
+                <button
+                  type="button"
+                  onClick={fetchMessages}
+                  className="font-medium underline hover:no-underline"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -206,6 +199,25 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
                 </div>
               </div>
             ))}
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center h-full px-8">
+            <ListErrorState
+              error={loadError}
+              onRetry={fetchMessages}
+              message="Couldn't load this conversation."
+              className="w-full max-w-md"
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-center px-8">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 mb-4">
+              <MessageSquare className="h-6 w-6 text-gray-400" />
+            </div>
+            <p className="text-sm text-gray-500 leading-relaxed max-w-md">
+              Send a message to start chatting with your agent.
+              The agent will use its configured model and persona to respond.
+            </p>
           </div>
         )}
       </div>
