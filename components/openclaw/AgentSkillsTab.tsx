@@ -112,6 +112,38 @@ export default function AgentSkillsTab({ agentId }: { agentId: string }) {
     );
   };
 
+  /**
+   * Builds the human-readable list of missing requirements for a skill's
+   * "Missing: ..." banner. Returns an empty array when the backend reports
+   * no concrete reason (e.g. all of `missing.bins/env/config` are empty
+   * arrays) -- which happens for skills marked `disabled`/`eligible: false`
+   * without a modeled reason (see issue #137, e.g. openai-whisper-api).
+   */
+  const getMissingReasons = (skill: Skill): string[] => {
+    return [
+      ...(skill.missing?.bins || []),
+      ...(skill.missing?.env || []).map((e) => `${e} env`),
+      ...(skill.missing?.config || []).map((c) => `${c} config`),
+    ].slice(0, 3);
+  };
+
+  /**
+   * A skill is "unexplained missing" when it's not eligible/is disabled but
+   * the backend hasn't reported any concrete missing bin/env/config AND it
+   * isn't otherwise flagged as needing installation or an API key. Those
+   * skills would otherwise render a bare "Missing: " label with nothing
+   * after the colon and no actionable button -- a dead end compared to
+   * every other card in the Missing bucket.
+   */
+  const hasUnexplainedMissingReason = (skill: Skill): boolean => {
+    return (
+      !skill.eligible &&
+      getMissingReasons(skill).length === 0 &&
+      !needsInstallation(skill) &&
+      !needsApiKey(skill)
+    );
+  };
+
   const isInstalled = (skill: Skill): boolean => {
     return skill.isInstalled === true;
   };
@@ -270,16 +302,12 @@ export default function AgentSkillsTab({ agentId }: { agentId: string }) {
                 </p>
 
                 {/* Missing dependencies */}
-                {!skill.eligible && skill.missing && (
+                {!skill.eligible && (
                   <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mb-2">
                     <span className="font-medium">Missing:</span>{' '}
-                    {[
-                      ...(skill.missing.bins || []),
-                      ...(skill.missing.env || []).map((e) => `${e} env`),
-                      ...(skill.missing.config || []).map((c) => `${c} config`),
-                    ]
-                      .slice(0, 3)
-                      .join(', ')}
+                    {getMissingReasons(skill).length > 0
+                      ? getMissingReasons(skill).join(', ')
+                      : 'Status unknown -- requirements not reported'}
                   </div>
                 )}
 
@@ -317,6 +345,21 @@ export default function AgentSkillsTab({ agentId }: { agentId: string }) {
                     >
                       <Settings className="h-3 w-3" />
                       Configure
+                    </button>
+                  )}
+
+                  {/* Fallback CTA for a "Missing" skill with no concrete
+                      reason reported by the backend (empty missing.bins/
+                      env/config and a null installation status) -- still
+                      routes through the install flow so the card isn't a
+                      dead end, see issue #137. */}
+                  {hasUnexplainedMissingReason(skill) && (
+                    <button
+                      onClick={() => handleInstall(skill.name)}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                    >
+                      <Download className="h-3 w-3" />
+                      Install
                     </button>
                   )}
                 </div>
