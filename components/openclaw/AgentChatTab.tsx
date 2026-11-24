@@ -3,9 +3,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { MessageSquare, Send, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import conversationService from '@/lib/conversation-service';
+import { openclawService } from '@/lib/openclaw-service';
+import ListErrorState from '@/components/openclaw/ListErrorState';
+import { ApiError } from '@/lib/api-client';
 import type { OpenClawAgent } from '@/types/openclaw';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api/v1';
 
 interface AgentChatTabProps {
   agent: OpenClawAgent;
@@ -24,63 +26,60 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const replyTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const fetchMessages = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setLoadError(null);
+
+      // First, get conversations for this agent. A failure here (including a
+      // 404/empty result for a brand new agent with no history yet) is an
+      // expected, already-handled condition -- not an unhandled exception --
+      // so it's logged quietly rather than via console.error, which would
+      // otherwise trip Next.js's dev-mode error overlay. See issue #125.
+      const convData = await conversationService.listConversations(agent.id);
+
+      if (convData.conversations && convData.conversations.length > 0) {
+        const conversation = convData.conversations[0]; // Get most recent
+        setConversationId(conversation.id);
+
+        // Fetch messages for this conversation
+        const msgData = await conversationService.listMessages(conversation.id, 100);
+
+        if (msgData.messages) {
+          // Transform messages to match our interface
+          const transformedMessages = msgData.messages.map((msg, idx) => ({
+            id: `msg-${msg.timestamp}-${idx}`,
+            role: msg.role as ChatMessage['role'],
+            content: msg.content,
+            timestamp: msg.timestamp,
+          }));
+
+          setMessages(transformedMessages);
+        }
+      }
+    } catch (error) {
+      // A brand new agent with no conversation history yet can surface as a
+      // 404 from the backend -- that's a normal empty state, not an error.
+      const isNotFound = error instanceof ApiError && error.statusCode === 404;
+      if (!isNotFound) {
+        // Expected/handled failure path (auth hiccup, network blip, etc.) --
+        // the UI already falls back to an inline error state below, so this
+        // doesn't warrant a blocking console.error. See issue #125.
+        console.warn('Could not load chat history for this agent:', error);
+        setLoadError(error);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [agent.id]);
 
   // Fetch existing conversation and messages
   useEffect(() => {
-    const fetchMessages = async () => {
-      try {
-        setIsLoading(true);
-
-        // First, get conversations for this agent
-        const convResponse = await fetch(
-          `${API_URL}/conversations?agent_id=${agent.id}`
-        );
-
-        if (!convResponse.ok) {
-          console.error('Failed to fetch conversations');
-          return;
-        }
-
-        const convData = await convResponse.json();
-
-        if (convData.conversations && convData.conversations.length > 0) {
-          const conversation = convData.conversations[0]; // Get most recent
-          setConversationId(conversation.id);
-
-          // Fetch messages for this conversation
-          const msgResponse = await fetch(
-            `${API_URL}/conversations/${conversation.id}/messages?limit=100`
-          );
-
-          if (!msgResponse.ok) {
-            console.error('Failed to fetch messages');
-            return;
-          }
-
-          const msgData = await msgResponse.json();
-
-          if (msgData.messages) {
-            // Transform messages to match our interface
-            const transformedMessages = msgData.messages.map((msg: any, idx: number) => ({
-              id: `msg-${msg.timestamp}-${idx}`,
-              role: msg.role,
-              content: msg.content,
-              timestamp: msg.timestamp,
-            }));
-
-            setMessages(transformedMessages);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching messages:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchMessages();
-  }, [agent.id]);
+  }, [fetchMessages]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -105,24 +104,22 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
     setIsSending(true);
 
     try {
-      // Send message to backend API (endpoint from agent_lifecycle.py)
-      const response = await fetch(`${API_URL}/agents/${agent.id}/message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: trimmed }),
+      // Send message to backend API (endpoint from agent_lifecycle.py), via
+      // the shared apiClient-backed service so the request carries the
+      // stored auth token like every other authenticated call in the app.
+      const data = await openclawService.sendMessage({
+        agentId: agent.id,
+        conversationId: conversationId ?? undefined,
+        message: trimmed,
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      if (data.conversationId && data.conversationId !== conversationId) {
+        setConversationId(data.conversationId);
       }
-
-      const data = await response.json();
 
       // Add assistant response
       const assistantMessage: ChatMessage = {
-        id: data.message_id || `msg-${Date.now()}-reply`,
+        id: data.messageId || `msg-${Date.now()}-reply`,
         role: 'assistant',
         content: data.response || 'No response received',
         timestamp: new Date().toISOString(),
@@ -141,7 +138,7 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
     } finally {
       setIsSending(false);
     }
-  }, [input, agent.id]);
+  }, [input, agent.id, conversationId]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -167,6 +164,15 @@ export default function AgentChatTab({ agent }: AgentChatTabProps) {
           <div className="flex flex-col items-center justify-center h-full">
             <Loader2 className="h-8 w-8 text-gray-400 animate-spin mb-3" />
             <p className="text-sm text-gray-500">Loading conversation...</p>
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center h-full px-8">
+            <ListErrorState
+              error={loadError}
+              onRetry={fetchMessages}
+              message="Couldn't load this conversation."
+              className="w-full max-w-md"
+            />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
