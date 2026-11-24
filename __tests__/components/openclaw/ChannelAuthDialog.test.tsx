@@ -69,13 +69,13 @@ describe('ChannelAuthDialog', () => {
                 />
             );
 
-            await user.type(screen.getByLabelText('Bot Token'), '123:ABC-token');
+            await user.type(screen.getByLabelText('Bot Token'), '123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
             await user.click(screen.getByRole('button', { name: 'Connect' }));
 
             await waitFor(() => expect(onSuccess).toHaveBeenCalled());
             expect(openClawService.addChannelBotToken).toHaveBeenCalledWith({
                 channel: 'telegram',
-                token: '123:ABC-token',
+                token: '123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
             });
             expect(toastMock).toHaveBeenCalledWith(
                 expect.objectContaining({ title: 'Channel connected!' })
@@ -91,7 +91,7 @@ describe('ChannelAuthDialog', () => {
 
             render(<ChannelAuthDialog {...defaultProps} />);
 
-            await user.type(screen.getByLabelText('Bot Token'), 'slow-token');
+            await user.type(screen.getByLabelText('Bot Token'), '123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
             await user.click(screen.getByRole('button', { name: 'Connect' }));
 
             await waitFor(() =>
@@ -109,7 +109,7 @@ describe('ChannelAuthDialog', () => {
 
             render(<ChannelAuthDialog {...defaultProps} />);
 
-            await user.type(screen.getByLabelText('Bot Token'), 'bad-token');
+            await user.type(screen.getByLabelText('Bot Token'), '123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
             await user.click(screen.getByRole('button', { name: 'Connect' }));
 
             await waitFor(() =>
@@ -120,6 +120,22 @@ describe('ChannelAuthDialog', () => {
                     })
                 )
             );
+        });
+
+        // Issue #132: any non-empty string, including an obviously garbage
+        // value, was previously accepted as a valid bot token and immediately
+        // reported as "Connected" with no format check at all.
+        it('rejects an obviously invalid token format instead of reporting success', async () => {
+            const user = userEvent.setup();
+            render(<ChannelAuthDialog {...defaultProps} />);
+
+            await user.type(screen.getByLabelText('Bot Token'), 'not-a-valid-token');
+            await user.click(screen.getByRole('button', { name: 'Connect' }));
+
+            expect(toastMock).toHaveBeenCalledWith(
+                expect.objectContaining({ title: 'Invalid token format', variant: 'destructive' })
+            );
+            expect(openClawService.addChannelBotToken).not.toHaveBeenCalled();
         });
     });
 
@@ -163,6 +179,20 @@ describe('ChannelAuthDialog', () => {
                     app_token: 'xapp-456',
                 })
             );
+        });
+
+        it('rejects a bot token that does not start with xoxb-', async () => {
+            const user = userEvent.setup();
+            render(<ChannelAuthDialog {...slackProps} />);
+
+            await user.type(screen.getByLabelText(/Bot Token/), 'not-a-slack-token');
+            await user.type(screen.getByLabelText(/App Token/), 'xapp-456');
+            await user.click(screen.getByRole('button', { name: 'Connect Slack' }));
+
+            expect(toastMock).toHaveBeenCalledWith(
+                expect.objectContaining({ title: 'Invalid bot token format', variant: 'destructive' })
+            );
+            expect(openClawService.addChannelSlack).not.toHaveBeenCalled();
         });
     });
 

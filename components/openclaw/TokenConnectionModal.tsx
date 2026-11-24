@@ -22,6 +22,34 @@ interface TokenConnectionModalProps {
   channelName: string;
 }
 
+// Per-channel bot token format validation (issue #132): the Connect flow
+// previously accepted any non-empty string and immediately reported success,
+// even for an obviously fake token like "not-a-valid-token" -- the backend's
+// settings PATCH doesn't validate the token shape either, so there was no
+// safety net anywhere in the stack. These are necessarily approximate (real
+// verification requires a live call to each provider's API, which belongs on
+// the backend), but they catch the common case of an empty/garbage/wrong-shape
+// value before it's ever persisted as if it were a working credential.
+const TOKEN_FORMATS: Record<
+  TokenConnectionModalProps['channelType'],
+  { pattern: RegExp; hint: string }
+> = {
+  telegram: {
+    // <bot_id>:<35-char auth token>, e.g. 123456789:ABCdefGHIjklMNOpqrsTUVwxyz0123456
+    pattern: /^\d+:[\w-]{35}$/,
+    hint: "Telegram bot tokens look like 123456789:ABCdefGHIjklMNOpqrsTUVwxyz0123456 -- a numeric bot ID, a colon, then a 35-character token from @BotFather.",
+  },
+  discord: {
+    // Three base64url-ish segments separated by dots (standard Discord bot token shape).
+    pattern: /^[\w-]{20,}\.[\w-]{6,}\.[\w-]{20,}$/,
+    hint: 'Discord bot tokens are three dot-separated segments (e.g. MTk4N...Gh65s3...iOXo83...) copied from the Bot section of the Discord Developer Portal.',
+  },
+  slack: {
+    pattern: /^xoxb-[\w-]+$/,
+    hint: 'Slack bot tokens start with "xoxb-" -- copy the "Bot User OAuth Token" from OAuth & Permissions.',
+  },
+};
+
 const instructions = {
   telegram: {
     title: 'How to get your Telegram bot token:',
@@ -82,8 +110,15 @@ export default function TokenConnectionModal({
   const config = instructions[channelType];
 
   const handleConnect = async () => {
-    if (!botToken.trim()) {
+    const trimmedToken = botToken.trim();
+    if (!trimmedToken) {
       setError('Please enter a bot token');
+      return;
+    }
+
+    const format = TOKEN_FORMATS[channelType];
+    if (!format.pattern.test(trimmedToken)) {
+      setError(`That doesn't look like a valid ${channelName} bot token. ${format.hint}`);
       return;
     }
 

@@ -26,6 +26,26 @@ interface ChannelAuthDialogProps {
   onSuccess: () => void;
 }
 
+// Per-channel bot token format validation (issue #132): previously any
+// non-empty string was accepted and immediately reported as "Connected",
+// even an obviously fake token. These patterns are necessarily approximate
+// (a real connectivity check requires calling each provider's API, which
+// belongs on the backend) but they catch the common case of an empty,
+// garbage, or wrong-shape value before it's persisted as a working credential.
+const BOT_TOKEN_FORMATS: Record<string, { pattern: RegExp; hint: string }> = {
+  telegram: {
+    pattern: /^\d+:[\w-]{35}$/,
+    hint: "Telegram bot tokens look like 123456789:ABCdefGHIjklMNOpqrsTUVwxyz0123456 -- a numeric bot ID, a colon, then a 35-character token from @BotFather.",
+  },
+  discord: {
+    pattern: /^[\w-]{20,}\.[\w-]{6,}\.[\w-]{20,}$/,
+    hint: 'Discord bot tokens are three dot-separated segments copied from the Bot section of the Discord Developer Portal.',
+  },
+};
+
+const SLACK_BOT_TOKEN_PATTERN = /^xoxb-[\w-]+$/;
+const SLACK_APP_TOKEN_PATTERN = /^xapp-[\w-]+$/;
+
 export function ChannelAuthDialog({
   open,
   onOpenChange,
@@ -43,10 +63,21 @@ export function ChannelAuthDialog({
   const [qrCode, setQrCode] = useState<string | null>(null);
 
   const handleBotTokenSubmit = async () => {
-    if (!botToken.trim()) {
+    const trimmedToken = botToken.trim();
+    if (!trimmedToken) {
       toast({
         title: 'Token required',
         description: 'Please enter your bot token',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const format = BOT_TOKEN_FORMATS[channelId];
+    if (format && !format.pattern.test(trimmedToken)) {
+      toast({
+        title: 'Invalid token format',
+        description: `That doesn't look like a valid ${channelName} bot token. ${format.hint}`,
         variant: 'destructive',
       });
       return;
@@ -56,7 +87,7 @@ export function ChannelAuthDialog({
     try {
       const result = await openClawService.addChannelBotToken({
         channel: channelId,
-        token: botToken,
+        token: trimmedToken,
       });
 
       toast({
@@ -87,7 +118,10 @@ export function ChannelAuthDialog({
   };
 
   const handleSlackSubmit = async () => {
-    if (!slackBotToken.trim() || !slackAppToken.trim()) {
+    const trimmedBotToken = slackBotToken.trim();
+    const trimmedAppToken = slackAppToken.trim();
+
+    if (!trimmedBotToken || !trimmedAppToken) {
       toast({
         title: 'Tokens required',
         description: 'Please enter both bot token and app token',
@@ -96,11 +130,29 @@ export function ChannelAuthDialog({
       return;
     }
 
+    if (!SLACK_BOT_TOKEN_PATTERN.test(trimmedBotToken)) {
+      toast({
+        title: 'Invalid bot token format',
+        description: 'Slack bot tokens start with "xoxb-" -- copy the "Bot User OAuth Token" from OAuth & Permissions.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!SLACK_APP_TOKEN_PATTERN.test(trimmedAppToken)) {
+      toast({
+        title: 'Invalid app token format',
+        description: 'Slack app tokens start with "xapp-" -- generate one under Basic Information > App-Level Tokens.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       const result = await openClawService.addChannelSlack({
-        bot_token: slackBotToken,
-        app_token: slackAppToken,
+        bot_token: trimmedBotToken,
+        app_token: trimmedAppToken,
       });
 
       toast({
