@@ -66,7 +66,26 @@ export default function OpenClawAgentsClient() {
     [router]
   );
 
-  const agents = useMemo(() => data?.agents ?? [], [data?.agents]);
+  // Stable client-side sort, independent of background refetches/mutations
+  // (poll every 10s, plus any create/delete/pause/resume/heartbeat
+  // invalidation -- see hooks/useOpenClawAgents.ts). The backend already
+  // sorts by `created_at DESC` (an immutable column, confirmed in
+  // agent_lifecycle_api_service.py -- not `updated_at`, so an unrelated
+  // agent's mutation does not reorder this list), but SQL doesn't guarantee
+  // a stable order among rows with how it ties on timestamp precision, and
+  // nothing stops a future backend change from using a volatile sort key.
+  // Re-deriving a deterministic order here means a row's position can never
+  // shift under the user's cursor between renders -- see issue #147.
+  const agents = useMemo(() => {
+    const list = data?.agents ?? [];
+    return [...list].sort((a, b) => {
+      const aTime = new Date(a.createdAt).getTime();
+      const bTime = new Date(b.createdAt).getTime();
+      if (aTime !== bTime) return bTime - aTime; // newest first, matches backend order
+      return a.id.localeCompare(b.id); // deterministic tiebreaker
+    });
+  }, [data?.agents]);
+  const existingAgentNames = useMemo(() => agents.map((a) => a.name), [agents]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return agents;
@@ -201,6 +220,7 @@ export default function OpenClawAgentsClient() {
         onOpenChange={setDialogOpen}
         onSubmit={handleCreate}
         isSubmitting={createAgent.isPending}
+        existingAgentNames={existingAgentNames}
       />
     </div>
   );
