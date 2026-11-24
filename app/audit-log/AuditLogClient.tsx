@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Clock } from 'lucide-react';
 import { useAuditEvents } from '@/hooks/useAuditLog';
@@ -33,10 +34,37 @@ function formatTimestamp(timestamp: string): string {
 }
 
 export default function AuditLogClient() {
-  const [eventType, setEventType] = useState<AuditEventType | 'all'>('all');
-  const [agentId, setAgentId] = useState<string>('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Filter state lives in the URL query string (?eventType=&agentId=&startDate=&endDate=)
+  // rather than plain useState, so it survives browser Back/Forward navigation
+  // and filtered views are shareable/bookmarkable. See issue #127.
+  const eventType = (searchParams.get('eventType') as AuditEventType | 'all') ?? 'all';
+  const agentId = searchParams.get('agentId') ?? 'all';
+  const startDate = searchParams.get('startDate') ?? '';
+  const endDate = searchParams.get('endDate') ?? '';
+
+  const updateFilters = useCallback(
+    (updates: Record<string, string>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value || value === 'all') {
+          params.delete(key);
+        } else {
+          params.set(key, value);
+        }
+      });
+      const query = params.toString();
+      router.replace(query ? `/audit-log?${query}` : '/audit-log', { scroll: false });
+    },
+    [router, searchParams]
+  );
+
+  const setEventType = (value: AuditEventType | 'all') => updateFilters({ eventType: value });
+  const setAgentId = (value: string) => updateFilters({ agentId: value });
+  const setStartDate = (value: string) => updateFilters({ startDate: value });
+  const setEndDate = (value: string) => updateFilters({ endDate: value });
 
   const filters = useMemo(
     () => ({
@@ -55,10 +83,7 @@ export default function AuditLogClient() {
     eventType !== 'all' || agentId !== 'all' || !!startDate || !!endDate;
 
   const clearFilters = () => {
-    setEventType('all');
-    setAgentId('all');
-    setStartDate('');
-    setEndDate('');
+    router.replace('/audit-log', { scroll: false });
   };
 
   return (

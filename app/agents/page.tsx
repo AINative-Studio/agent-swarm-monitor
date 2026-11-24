@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { Suspense } from 'react';
 import OpenClawAgentsClient from './OpenClawAgentsClient';
 
 export const metadata: Metadata = {
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function OpenClawAgentsPage() {
-  return <OpenClawAgentsClient />;
+  return (
+    <Suspense>
+      <OpenClawAgentsClient />
+    </Suspense>
+  );
 }

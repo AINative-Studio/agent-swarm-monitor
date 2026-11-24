@@ -7,7 +7,8 @@ import userEvent from '@testing-library/user-event';
 // Create Agent must not close/reset silently on a failed submit.
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const refetch = vi.fn();

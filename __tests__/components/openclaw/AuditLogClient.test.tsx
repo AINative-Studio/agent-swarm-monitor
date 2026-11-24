@@ -4,6 +4,39 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AuditLogClient from '@/app/audit-log/AuditLogClient';
 import type { AuditEvent, AuditEventListResponse } from '@/types/openclaw';
 
+// A minimal stateful fake of the Next.js router/searchParams pair: router.replace
+// pushes a new query string into an external store, and useSearchParams subscribes
+// to it via useSyncExternalStore -- so that, like the real App Router, calling
+// router.replace('/audit-log?eventType=x') actually changes what useSearchParams()
+// returns on the next render. A plain static mock would make it impossible to
+// verify that filter state round-trips through the URL (issue #127).
+let currentSearch = '';
+let cachedParams = new URLSearchParams(currentSearch);
+const subscribers = new Set<() => void>();
+
+const mockReplace = vi.fn((url: string) => {
+  const queryIndex = url.indexOf('?');
+  const nextSearch = queryIndex === -1 ? '' : url.slice(queryIndex + 1);
+  if (nextSearch === currentSearch) return;
+  currentSearch = nextSearch;
+  cachedParams = new URLSearchParams(currentSearch);
+  subscribers.forEach((fn) => fn());
+});
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: mockReplace }),
+  useSearchParams: () => {
+    const React = require('react');
+    return React.useSyncExternalStore(
+      (onStoreChange: () => void) => {
+        subscribers.add(onStoreChange);
+        return () => subscribers.delete(onStoreChange);
+      },
+      () => cachedParams
+    );
+  },
+}));
+
 vi.mock('@/hooks/useAuditLog', () => ({
   useAuditEvents: vi.fn(),
   useSettings: vi.fn(),
@@ -51,6 +84,9 @@ function buildEventsResponse(events: AuditEvent[]): AuditEventListResponse {
 describe('AuditLogClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockReplace.mockClear();
+    currentSearch = '';
+    cachedParams = new URLSearchParams(currentSearch);
     mockUseAuditEvents.mockReturnValue({
       data: buildEventsResponse(mockEvents),
       isLoading: false,

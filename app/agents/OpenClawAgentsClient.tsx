@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,10 +15,28 @@ import type { CreateAgentRequest } from '@/types/openclaw';
 
 export default function OpenClawAgentsClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data, isLoading, isError, error, refetch } = useAgentList();
   const createAgent = useCreateAgent();
-  const [search, setSearch] = useState('');
+  // Search term lives in the URL (?search=) rather than plain useState so it
+  // survives browser Back/Forward navigation and is shareable/bookmarkable.
+  // See issue #127.
+  const search = searchParams.get('search') ?? '';
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  const setSearch = useCallback(
+    (value: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (value) {
+        params.set('search', value);
+      } else {
+        params.delete('search');
+      }
+      const query = params.toString();
+      router.replace(query ? `/agents?${query}` : '/agents', { scroll: false });
+    },
+    [router, searchParams]
+  );
 
   const agents = useMemo(() => data?.agents ?? [], [data?.agents]);
 
