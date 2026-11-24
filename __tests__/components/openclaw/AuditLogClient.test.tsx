@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AuditLogClient from '@/app/audit-log/AuditLogClient';
 import type { AuditEvent, AuditEventListResponse } from '@/types/openclaw';
@@ -173,5 +173,40 @@ describe('AuditLogClient', () => {
     fireEvent.click(clearButton);
 
     expect(screen.queryByRole('button', { name: /clear filters/i })).not.toBeInTheDocument();
+  });
+
+  // Issue #134: syncing every filter change to the URL immediately produced
+  // one router.replace() (and therefore one Next.js RSC round trip) per
+  // keystroke/change event. Filter writes to the URL should now be debounced.
+  it('debounces rapid filter changes into a single router.replace call, while updating the UI instantly', async () => {
+    vi.useFakeTimers();
+    try {
+      renderWithQueryClient(<AuditLogClient />);
+      mockReplace.mockClear();
+
+      const startDateInput = screen.getByLabelText(/filter start date/i);
+      // Simulate a burst of rapid changes (e.g. typing a date digit by digit).
+      fireEvent.change(startDateInput, { target: { value: '2026-01-0' } });
+      fireEvent.change(startDateInput, { target: { value: '2026-01-01' } });
+      fireEvent.change(startDateInput, { target: { value: '2026-01-15' } });
+
+      // The input itself reflects the latest value instantly, with zero debounce lag.
+      expect(startDateInput).toHaveValue('2026-01-15');
+      // But no router.replace has fired yet -- it's still debouncing.
+      expect(mockReplace).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      // Exactly one replace call for the whole burst, with the final value.
+      expect(mockReplace).toHaveBeenCalledTimes(1);
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining('startDate=2026-01-15'),
+        expect.anything()
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

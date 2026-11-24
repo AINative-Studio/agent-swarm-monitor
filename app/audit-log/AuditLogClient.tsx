@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Clock } from 'lucide-react';
@@ -33,38 +33,82 @@ function formatTimestamp(timestamp: string): string {
   });
 }
 
+// Debounce how often filter changes are pushed into the URL -- each
+// router.replace() triggers a Next.js App Router RSC round trip, so syncing
+// on every change event (e.g. each digit typed into a date field) produced
+// far more network requests than necessary. See issue #134.
+const FILTER_URL_SYNC_DEBOUNCE_MS = 300;
+
 export default function AuditLogClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   // Filter state lives in the URL query string (?eventType=&agentId=&startDate=&endDate=)
   // rather than plain useState, so it survives browser Back/Forward navigation
-  // and filtered views are shareable/bookmarkable. See issue #127.
-  const eventType = (searchParams.get('eventType') as AuditEventType | 'all') ?? 'all';
-  const agentId = searchParams.get('agentId') ?? 'all';
-  const startDate = searchParams.get('startDate') ?? '';
-  const endDate = searchParams.get('endDate') ?? '';
+  // and filtered views are shareable/bookmarkable. See issue #127. Local state
+  // mirrors the URL for instant UI feedback; writes to the URL are debounced
+  // (see updateFilters below) so a burst of changes (e.g. typing a date)
+  // doesn't fire one router.replace() per keystroke.
+  const urlEventType = (searchParams.get('eventType') as AuditEventType | 'all') ?? 'all';
+  const urlAgentId = searchParams.get('agentId') ?? 'all';
+  const urlStartDate = searchParams.get('startDate') ?? '';
+  const urlEndDate = searchParams.get('endDate') ?? '';
+
+  const [eventType, setEventTypeState] = useState(urlEventType);
+  const [agentId, setAgentIdState] = useState(urlAgentId);
+  const [startDate, setStartDateState] = useState(urlStartDate);
+  const [endDate, setEndDateState] = useState(urlEndDate);
+
+  // Re-sync local state from the URL when it changes from outside this
+  // component's own debounced writes -- e.g. Back/Forward navigation.
+  useEffect(() => {
+    setEventTypeState(urlEventType);
+    setAgentIdState(urlAgentId);
+    setStartDateState(urlStartDate);
+    setEndDateState(urlEndDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-syncs from the URL
+  }, [urlEventType, urlAgentId, urlStartDate, urlEndDate]);
+
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    return () => clearTimeout(debounceTimerRef.current);
+  }, []);
 
   const updateFilters = useCallback(
     (updates: Record<string, string>) => {
-      const params = new URLSearchParams(searchParams.toString());
-      Object.entries(updates).forEach(([key, value]) => {
-        if (!value || value === 'all') {
-          params.delete(key);
-        } else {
-          params.set(key, value);
-        }
-      });
-      const query = params.toString();
-      router.replace(query ? `/audit-log?${query}` : '/audit-log', { scroll: false });
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        const params = new URLSearchParams(window.location.search);
+        Object.entries(updates).forEach(([key, value]) => {
+          if (!value || value === 'all') {
+            params.delete(key);
+          } else {
+            params.set(key, value);
+          }
+        });
+        const query = params.toString();
+        router.replace(query ? `/audit-log?${query}` : '/audit-log', { scroll: false });
+      }, FILTER_URL_SYNC_DEBOUNCE_MS);
     },
-    [router, searchParams]
+    [router]
   );
 
-  const setEventType = (value: AuditEventType | 'all') => updateFilters({ eventType: value });
-  const setAgentId = (value: string) => updateFilters({ agentId: value });
-  const setStartDate = (value: string) => updateFilters({ startDate: value });
-  const setEndDate = (value: string) => updateFilters({ endDate: value });
+  const setEventType = (value: AuditEventType | 'all') => {
+    setEventTypeState(value);
+    updateFilters({ eventType: value });
+  };
+  const setAgentId = (value: string) => {
+    setAgentIdState(value);
+    updateFilters({ agentId: value });
+  };
+  const setStartDate = (value: string) => {
+    setStartDateState(value);
+    updateFilters({ startDate: value });
+  };
+  const setEndDate = (value: string) => {
+    setEndDateState(value);
+    updateFilters({ endDate: value });
+  };
 
   const filters = useMemo(
     () => ({
@@ -83,6 +127,11 @@ export default function AuditLogClient() {
     eventType !== 'all' || agentId !== 'all' || !!startDate || !!endDate;
 
   const clearFilters = () => {
+    clearTimeout(debounceTimerRef.current);
+    setEventTypeState('all');
+    setAgentIdState('all');
+    setStartDateState('');
+    setEndDateState('');
     router.replace('/audit-log', { scroll: false });
   };
 

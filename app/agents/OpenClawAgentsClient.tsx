@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -13,29 +13,57 @@ import CreateAgentDialog from '@/components/openclaw/CreateAgentDialog';
 import ListErrorState from '@/components/openclaw/ListErrorState';
 import type { CreateAgentRequest } from '@/types/openclaw';
 
+// Debounce how often the search term is pushed into the URL -- each
+// router.replace() triggers a Next.js App Router RSC round trip, so syncing
+// on every keystroke (as the #127 fix originally did) produced one network
+// request per character typed. See issue #134.
+const SEARCH_URL_SYNC_DEBOUNCE_MS = 300;
+
 export default function OpenClawAgentsClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data, isLoading, isError, error, refetch } = useAgentList();
   const createAgent = useCreateAgent();
+  const [dialogOpen, setDialogOpen] = useState(false);
+
   // Search term lives in the URL (?search=) rather than plain useState so it
   // survives browser Back/Forward navigation and is shareable/bookmarkable.
-  // See issue #127.
-  const search = searchParams.get('search') ?? '';
-  const [dialogOpen, setDialogOpen] = useState(false);
+  // See issue #127. `search` is the instant, locally-typed value used for
+  // filtering and rendering the input; it's synced TO the URL only after a
+  // debounce (see effect below), and re-synced FROM the URL on Back/Forward
+  // (when searchParams changes without the debounce timer firing).
+  const urlSearch = searchParams.get('search') ?? '';
+  const [search, setSearchState] = useState(urlSearch);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Keep local state in sync with the URL when it changes from outside this
+  // component's own debounced writes -- e.g. Back/Forward navigation.
+  useEffect(() => {
+    setSearchState(urlSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-syncs from the URL, not on every local search change
+  }, [urlSearch]);
+
+  useEffect(() => {
+    return () => clearTimeout(debounceTimerRef.current);
+  }, []);
 
   const setSearch = useCallback(
     (value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (value) {
-        params.set('search', value);
-      } else {
-        params.delete('search');
-      }
-      const query = params.toString();
-      router.replace(query ? `/agents?${query}` : '/agents', { scroll: false });
+      setSearchState(value);
+
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (value) {
+          params.set('search', value);
+        } else {
+          params.delete('search');
+        }
+        const query = params.toString();
+        router.replace(query ? `/agents?${query}` : '/agents', { scroll: false });
+      }, SEARCH_URL_SYNC_DEBOUNCE_MS);
     },
-    [router, searchParams]
+    [router]
   );
 
   const agents = useMemo(() => data?.agents ?? [], [data?.agents]);
